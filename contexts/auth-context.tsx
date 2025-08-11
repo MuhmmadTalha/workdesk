@@ -174,6 +174,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setUser(null)
     if (typeof window !== 'undefined') {
       localStorage.removeItem("user")
+      // Persist current theme to localStorage
+      const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+      localStorage.setItem('theme', theme);
     }
     router.push("/login")
   }

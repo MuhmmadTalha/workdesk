@@ -61,14 +61,25 @@ export function DashboardContent() {
       
       // Load all data with simple queries (no complex relationships)
       const [employeesResult, tasksResult, performanceResult] = await Promise.all([
+<<<<<<< HEAD
         supabase.from('employees').select('id, name, email'),
+=======
+  supabase.from('employees').select('id, name, email, role'),
+>>>>>>> 62e1b12 (Initial commit: source code and config files)
         supabase.from('tasks').select('*'),
         supabase.from('performance_ratings').select('rating, employee_id')
       ])
 
       // Process employees data
+<<<<<<< HEAD
       const employees = employeesResult.data || []
       console.log('Employees loaded:', employees.length)
+=======
+  let employees = employeesResult.data || []
+  // Exclude admin from employee count
+  employees = employees.filter(emp => emp.role !== 'admin')
+  console.log('Employees loaded (excluding admin):', employees.length)
+>>>>>>> 62e1b12 (Initial commit: source code and config files)
 
       // Process tasks data
       const tasks = tasksResult.data || []
@@ -216,9 +227,12 @@ export function DashboardContent() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.completedTasks}</div>
+<<<<<<< HEAD
             <p className="text-xs text-muted-foreground">
               {stats.totalTasks > 0 ? Math.round((stats.completedTasks / stats.totalTasks) * 100) : 0}% completion rate
             </p>
+=======
+>>>>>>> 62e1b12 (Initial commit: source code and config files)
           </CardContent>
         </Card>
 
