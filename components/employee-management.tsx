@@ -435,128 +435,130 @@ export function EmployeeManagement() {
                   View and manage employee verification status
                 </CardDescription>
               </div>
-              <div className="w-full sm:w-72">
+              <div className="w-full max-w-xs sm:w-72">
                 <Input
                   placeholder="Search employees..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="h-9"
+                  className="h-9 w-full"
                 />
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Employee</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Department</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Hire Date</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredEmployees.length === 0 ? (
+            <div className="w-full max-w-full overflow-x-auto" style={{ maxWidth: '100vw' }}>
+              <Table className="w-full" style={{ minWidth: '600px' }}>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8">
-                      <div className="text-muted-foreground">
-                        {searchTerm ? `No employees found matching "${searchTerm}"` : 'No employees found'}
-                      </div>
-                    </TableCell>
+                    <TableHead>Employee</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead className="hidden sm:table-cell">Department</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="hidden sm:table-cell">Hire Date</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ) : (
-                  filteredEmployees.map((employee) => (
-                  <TableRow key={employee.id} className="group hover:bg-muted/50">
-                    <TableCell>
-                      <div className="flex justify-between items-start">
+                </TableHeader>
+                <TableBody>
+                  {filteredEmployees.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center py-8">
+                        <div className="text-muted-foreground">
+                          {searchTerm ? `No employees found matching "${searchTerm}"` : 'No employees found'}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredEmployees.map((employee) => (
+                    <TableRow key={employee.id} className="group hover:bg-muted/50">
+                      <TableCell>
+                        <div className="flex justify-between items-start">
+                          <div className="flex flex-col">
+                            <div className="font-medium">{highlightText(employee.name)}</div>
+                            <div className="text-sm text-muted-foreground flex items-center">
+                              <Mail className="w-3 h-3 mr-1" />
+                              {employee.email}
+                            </div>
+                          </div>
+                          {employee.role !== 'admin' && (
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 ml-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleEditEmployee(employee)}
+                                className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleDeleteEmployee(employee)}
+                                className="h-8 w-8 p-0 text-muted-foreground hover:text-red-600"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={employee.role === 'admin' ? 'default' : 'secondary'}>
+                          {employee.role.charAt(0).toUpperCase() + employee.role.slice(1)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">
                         <div className="flex flex-col">
-                          <div className="font-medium">{highlightText(employee.name)}</div>
-                          <div className="text-sm text-muted-foreground flex items-center">
-                            <Mail className="w-3 h-3 mr-1" />
-                            {employee.email}
+                          <div className="flex items-center text-xs">
+                            <Building className="w-3 h-3 mr-1" />
+                            {employee.department || 'N/A'}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {employee.position || 'N/A'}
                           </div>
                         </div>
-                        {employee.role !== 'admin' && (
-                          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 ml-2">
+                      </TableCell>
+                      <TableCell>
+                        {getStatusBadge(employee.is_verified)}
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        <div className="flex items-center text-xs">
+                          <Calendar className="w-3 h-3 mr-1" />
+                          {employee.hire_date ? new Date(employee.hire_date).toLocaleDateString() : 'N/A'}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {!employee.is_verified && employee.role !== 'admin' && (
+                          <div className="flex gap-2 justify-end">
                             <Button
                               size="sm"
-                              variant="ghost"
-                              onClick={() => handleEditEmployee(employee)}
-                              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                              onClick={() => handleVerifyEmployee(employee.id)}
+                              className="bg-green-600 hover:bg-green-700"
                             >
-                              <Pencil className="w-4 h-4" />
+                              <CheckCircle className="w-3 h-3 mr-1" />
+                              Verify
                             </Button>
                             <Button
                               size="sm"
-                              variant="ghost"
-                              onClick={() => handleDeleteEmployee(employee)}
-                              className="h-8 w-8 p-0 text-muted-foreground hover:text-red-600"
+                              variant="destructive"
+                              onClick={() => handleRejectEmployee(employee.id)}
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <XCircle className="w-3 h-3 mr-1" />
+                              Reject
                             </Button>
                           </div>
                         )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={employee.role === 'admin' ? 'default' : 'secondary'}>
-                        {employee.role.charAt(0).toUpperCase() + employee.role.slice(1)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-col">
-                        <div className="flex items-center text-sm">
-                          <Building className="w-3 h-3 mr-1" />
-                          {employee.department || 'N/A'}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {employee.position || 'N/A'}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {getStatusBadge(employee.is_verified)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center text-sm">
-                        <Calendar className="w-3 h-3 mr-1" />
-                        {employee.hire_date ? new Date(employee.hire_date).toLocaleDateString() : 'N/A'}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {!employee.is_verified && employee.role !== 'admin' && (
-                        <div className="flex gap-2 justify-end">
-                          <Button
-                            size="sm"
-                            onClick={() => handleVerifyEmployee(employee.id)}
-                            className="bg-green-600 hover:bg-green-700"
-                          >
-                            <CheckCircle className="w-3 h-3 mr-1" />
-                            Verify
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => handleRejectEmployee(employee.id)}
-                          >
-                            <XCircle className="w-3 h-3 mr-1" />
-                            Reject
-                          </Button>
-                        </div>
-                      )}
-                      {employee.is_verified && (
-                        <Badge variant="outline" className="text-green-600">
-                          Active
-                        </Badge>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                        {employee.is_verified && (
+                          <Badge variant="outline" className="text-green-600">
+                            Active
+                          </Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       </div>
