@@ -98,10 +98,12 @@ export function DashboardContent() {
       })
 
       // Set task status data for pie chart
+      const cancelledTasks = tasks.filter(task => task.status === 'cancelled' || task.status === 'Cancelled').length;
       setTaskStatusData([
         { name: 'Completed', value: completedTasks, color: '#22c55e' },
         { name: 'In Progress', value: inProgressTasks, color: '#f59e0b' },
-        { name: 'Pending', value: pendingTasks, color: '#ef4444' }
+        { name: 'Pending', value: pendingTasks, color: '#ef4444' },
+  { name: 'Cancelled', value: cancelledTasks, color: '#9ca3af' }
       ].filter(item => item.value > 0))
 
       // Build employee performance data

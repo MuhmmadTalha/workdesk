@@ -50,14 +50,14 @@ export default function LoginForm() {
       {/* Ripple Grid Background - Theme adaptive */}
       <div className="fixed inset-0 w-full h-full z-0">
         <RippleGrid
-          opacity={resolvedTheme === 'dark' ? 0.8 : 0.2}
-          gridColor={resolvedTheme === 'dark' ? "#8b5cf6" : "#e5e7eb"}
+          opacity={resolvedTheme === 'dark' ? 0.8 : 0.8}
+          gridColor={resolvedTheme === 'dark' ? "#8b5cf6" : "#6d28d9"}
           rippleIntensity={0.04}
           gridSize={8.0}
-          gridThickness={12.0}
-          fadeDistance={resolvedTheme === 'dark' ? 1.2 : 8.0}
-          vignetteStrength={1.5}
-          glowIntensity={0.08}
+          gridThickness={resolvedTheme === 'dark' ? 12.0 : 20.0}
+          fadeDistance={resolvedTheme === 'dark' ? 1.2 : 0.1}
+          vignetteStrength={resolvedTheme === 'dark' ? 1.5 : 0.1}
+          glowIntensity={resolvedTheme === 'dark' ? 0.08 : 0.02}
           mouseInteraction={true}
           mouseInteractionRadius={1.2}
           key={resolvedTheme === 'dark' ? 'dark' : 'light'} // Force re-render on theme change
