@@ -43,6 +43,7 @@ export function PerformanceContent() {
     rating: 1,
     feedback: ""
   })
+  const [searchTerm, setSearchTerm] = useState("");
   const { toast } = useToast()
 
   // Test database connectivity
@@ -310,6 +311,22 @@ export function PerformanceContent() {
     ))
   }
 
+  // Filter ratings by employee name only
+  const filteredRatings = ratings.filter(rating =>
+    rating.employee_name?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Highlight helper for name only
+  function highlightText(text: string) {
+    if (!searchTerm) return text;
+    const regex = new RegExp(`(${searchTerm})`, 'gi');
+    return text.split(regex).map((part, i) =>
+      regex.test(part)
+        ? <span key={i} style={{ background: '#fde68a', color: '#b45309', borderRadius: '2px', padding: '0 2px' }}>{part}</span>
+        : part
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -478,13 +495,22 @@ export function PerformanceContent() {
                 Employee performance ratings and feedback history
               </CardDescription>
             </div>
-            <Button 
-              variant="outline" 
-              onClick={testDatabase}
-              className="ml-4"
-            >
-              Test Database
-            </Button>
+            <div className="flex gap-2 items-center">
+              <input
+                type="text"
+                placeholder="Search employee name..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="border rounded px-2 py-1 text-sm"
+              />
+              <Button 
+                variant="outline" 
+                onClick={testDatabase}
+                className="ml-2"
+              >
+                Test Database
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -506,16 +532,16 @@ export function PerformanceContent() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {ratings.length === 0 ? (
+                {filteredRatings.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                       No performance ratings yet.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  ratings.map((rating) => (
+                  filteredRatings.map((rating) => (
                     <TableRow key={rating.id}>
-                      <TableCell className="font-medium">{rating.employee_name}</TableCell>
+                      <TableCell className="font-medium">{highlightText(rating.employee_name || "")}</TableCell>
                       <TableCell>{rating.period}</TableCell>
                       <TableCell>
                         <Badge variant={getRatingColor(rating.rating)}>

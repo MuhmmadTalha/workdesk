@@ -1,4 +1,4 @@
-// File: D:\Gen-T Projects\office-mgt-system\app\layout.tsx
+// File: D:\Gen-T Projects\office-mgt-system-main\office-mgt-system-main\app\layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

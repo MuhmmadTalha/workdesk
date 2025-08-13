@@ -41,6 +41,7 @@ export function TasksContent() {
     deadline: "",
     priority: "Medium" as "Low" | "Medium" | "High"
   })
+  const [searchTerm, setSearchTerm] = useState("");
   const { toast } = useToast()
 
   // Database test function
@@ -343,6 +344,23 @@ export function TasksContent() {
     }
   }
 
+  // Trimmed search term for reliable matching/highlighting
+  const trimmedSearchTerm = searchTerm.trim();
+  const filteredTasks = tasks.filter(task =>
+    trimmedSearchTerm === "" ? true : task.title.toLowerCase().includes(trimmedSearchTerm.toLowerCase())
+  );
+
+  // Highlight helper for title only
+  function highlightText(text: string) {
+    if (!trimmedSearchTerm) return text;
+    const regex = new RegExp(`(${trimmedSearchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    return text.split(regex).map((part, i) =>
+      regex.test(part)
+        ? <span key={i} style={{ background: '#fde68a', color: '#b45309', borderRadius: '2px', padding: '0 2px', border: '1px solid #b45309' }}>{part}</span>
+        : part
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -487,6 +505,15 @@ export function TasksContent() {
           <CardDescription>
             All assigned tasks and their current status
           </CardDescription>
+          <div className="flex gap-2 items-center mt-2">
+            <input
+              type="text"
+              placeholder="Search task title..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="border rounded px-2 py-1 text-sm"
+            />
+          </div>
         </CardHeader>
         <CardContent>
           <Table>
@@ -510,18 +537,18 @@ export function TasksContent() {
                     </div>
                   </TableCell>
                 </TableRow>
-              ) : tasks.length === 0 ? (
+              ) : filteredTasks.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                     No tasks assigned yet.
                   </TableCell>
                 </TableRow>
               ) : (
-                tasks.map((task) => (
+                filteredTasks.map((task) => (
                   <TableRow key={task.id}>
                     <TableCell>
                       <div>
-                        <div className="font-medium">{task.title}</div>
+                        <div className="font-medium">{highlightText(task.title)}</div>
                         <div className="text-sm text-muted-foreground">{task.description}</div>
                       </div>
                     </TableCell>

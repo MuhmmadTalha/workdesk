@@ -10,6 +10,8 @@ export interface User {
   name: string
   role: "admin" | "employee"
   isVerified?: boolean
+  department?: string
+  position?: string
 }
 
 interface AuthContextType {
@@ -123,7 +125,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         email: employee.email,
         name: employee.name,
         role: employee.role,
-        isVerified: employee.is_verified
+        isVerified: employee.is_verified,
+        department: employee.department || '',
+        position: employee.position || ''
       }
 
       setUser(userData)
@@ -134,15 +138,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.log('✅ User stored in localStorage for persistence')
       }
 
-      // Set auth loading for 3 seconds (reduced)
-      setIsAuthLoading(true)
-      setTimeout(() => {
-        setIsAuthLoading(false)
-      }, 3000)
-      
-      setIsLoading(false)
-      console.log('✅ Login successful!')
-      return true
+  // Instantly set auth loading to false after login
+  setIsAuthLoading(false)
+  setIsLoading(false)
+  console.log('✅ Login successful!')
+  return true
     } catch (err) {
       console.error('❌ Login error:', err)
       setError("Connection error. Please check your internet connection.")

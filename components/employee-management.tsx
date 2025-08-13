@@ -30,12 +30,9 @@ export function EmployeeManagement() {
   }, [])
 
   useEffect(() => {
-    // Filter and sort employees
+    // Filter employees by name only
     let filtered = employees.filter(employee => 
-      employee.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      employee.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      employee.department?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      employee.position?.toLowerCase().includes(searchTerm.toLowerCase())
+      employee.name.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
     // Sort: Admins first, then by name
@@ -47,6 +44,17 @@ export function EmployeeManagement() {
 
     setFilteredEmployees(filtered)
   }, [employees, searchTerm])
+
+  // Highlight helper for name only
+  function highlightText(text: string) {
+    if (!searchTerm) return text
+    const regex = new RegExp(`(${searchTerm})`, 'gi')
+    return text.split(regex).map((part, i) =>
+      regex.test(part)
+        ? <span key={i} style={{ background: '#fde68a', color: '#b45309', borderRadius: '2px', padding: '0 2px' }}>{part}</span>
+        : part
+    )
+  }
 
   const loadEmployees = async () => {
     try {
@@ -464,7 +472,7 @@ export function EmployeeManagement() {
                     <TableCell>
                       <div className="flex justify-between items-start">
                         <div className="flex flex-col">
-                          <div className="font-medium">{employee.name}</div>
+                          <div className="font-medium">{highlightText(employee.name)}</div>
                           <div className="text-sm text-muted-foreground flex items-center">
                             <Mail className="w-3 h-3 mr-1" />
                             {employee.email}

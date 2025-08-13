@@ -19,6 +19,7 @@ export function SimpleTasksContent() {
   const [loading, setLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const [searchFilter, setSearchFilter] = useState("title") // title, employee, due, priority
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([])
   const [availableEmployee, setAvailableEmployee] = useState("")
   const [formData, setFormData] = useState({
@@ -215,12 +216,30 @@ export function SimpleTasksContent() {
     )
   }
 
-  // Filter tasks based on search query
-  const filteredTasks = tasks.filter(task =>
-    task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    task.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    task.assigned_names?.some((name: string) => name.toLowerCase().includes(searchQuery.toLowerCase()))
-  )
+  // Filter tasks based on search query and filter type
+  const trimmedQuery = searchQuery.trim().toLowerCase();
+  let filteredTasks = tasks;
+  if (trimmedQuery) {
+    if (searchFilter === "title") {
+      filteredTasks = tasks.filter(task => task.title.toLowerCase().includes(trimmedQuery));
+    } else if (searchFilter === "employee") {
+      filteredTasks = tasks.filter(task => task.assigned_names?.some((name: string) => name.toLowerCase().includes(trimmedQuery)));
+    } else if (searchFilter === "due") {
+      filteredTasks = tasks.filter(task => (task.deadline || "").toLowerCase().includes(trimmedQuery));
+    } else if (searchFilter === "priority") {
+      filteredTasks = tasks.filter(task => (task.priority || "").toLowerCase().includes(trimmedQuery));
+    }
+  }
+  // Highlight helper for title only
+  function highlightText(text: string) {
+    if (!trimmedQuery || searchFilter !== "title") return text;
+    const regex = new RegExp(`(${trimmedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    return text.split(regex).map((part, i) =>
+      regex.test(part)
+        ? <span key={i} style={{ background: '#fde68a', color: '#b45309', borderRadius: '2px', padding: '0 2px', border: '1px solid #b45309' }}>{part}</span>
+        : part
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -232,14 +251,30 @@ export function SimpleTasksContent() {
           </p>
         </div>
         <div className="flex flex-col space-y-2 md:flex-row md:gap-2 md:space-y-0">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+          <div className="relative flex items-center w-full md:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4 pointer-events-none" />
             <Input
-              placeholder="Search tasks..."
+              placeholder={`Search by ${searchFilter === 'title' ? 'title' : searchFilter === 'employee' ? 'employee' : searchFilter === 'due' ? 'due date' : 'priority'}...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 w-full md:w-64"
+              className="pl-10 pr-10 w-full"
+              style={{ paddingRight: '2.5rem' }}
             />
+            {/* Filter button inside input, like eye icon for password */}
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center h-full z-10">
+              <Select value={searchFilter} onValueChange={setSearchFilter}>
+                <SelectTrigger className="bg-transparent border-none p-0 h-7 w-7 flex items-center justify-center cursor-pointer shadow-none">
+                  {/* Use a filter icon from lucide-react or similar */}
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707l-6.414 6.414A1 1 0 0013 13.414V19a1 1 0 01-1.447.894l-4-2A1 1 0 017 17v-3.586a1 1 0 00-.293-.707L3.293 6.707A1 1 0 013 6V4z" /></svg>
+                </SelectTrigger>
+                <SelectContent side="bottom" align="end" className="min-w-[120px]">
+                  <SelectItem value="title">Title</SelectItem>
+                  <SelectItem value="employee">Employee</SelectItem>
+                  <SelectItem value="due">Due Date</SelectItem>
+                  <SelectItem value="priority">Priority</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <Button onClick={() => setIsDialogOpen(true)} className="w-full md:w-auto">
             <Plus className="mr-2 h-4 w-4" />
@@ -391,7 +426,7 @@ export function SimpleTasksContent() {
                 <div key={task.id} className="border rounded-lg p-4">
                   <div className="flex flex-col md:flex-row md:justify-between md:items-start">
                     <div className="flex-1">
-                      <h3 className="font-semibold text-lg">{task.title}</h3>
+                      <h3 className="font-semibold text-lg">{highlightText(task.title)}</h3>
                       <p className="text-sm text-muted-foreground mt-1">{task.description}</p>
                       <div className="flex flex-wrap gap-2 mt-3">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-300">

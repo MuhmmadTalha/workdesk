@@ -81,6 +81,12 @@ export function EmployeeSidebar({ activeTab, setActiveTab, user, onLogout, showN
         <div className="text-center mt-2">
           <p className="font-medium text-sm truncate">{user?.name || 'Employee'}</p>
           <p className="text-xs text-muted-foreground truncate">{user?.role || 'Employee'}</p>
+          {user?.department && (
+            <p className="text-xs text-muted-foreground truncate">Department: {user.department}</p>
+          )}
+          {user?.position && (
+            <p className="text-xs text-muted-foreground truncate">Position: {user.position}</p>
+          )}
         </div>
       </SidebarHeader>
       <SidebarContent>
