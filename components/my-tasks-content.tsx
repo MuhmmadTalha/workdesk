@@ -242,54 +242,56 @@ export function MyTasksContent({ userId }: MyTasksContentProps) {
               No tasks assigned to you yet.
             </div>
           ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12">Done</TableHead>
-                <TableHead>Task</TableHead>
-                <TableHead>Deadline</TableHead>
-                <TableHead>Priority</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {tasks.map((task) => (
-                <TableRow key={task.id}>
-                  <TableCell>
-                    <Checkbox
-                      checked={task.status === "Completed"}
-                      onCheckedChange={() => handleTaskComplete(task.id, task.status)}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <div className={`font-medium ${task.status === "Completed" ? "line-through text-muted-foreground" : ""}`}>
-                        {task.title}
-                      </div>
-                      <div className="text-sm text-muted-foreground">{task.description}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell>{task.deadline}</TableCell>
-                  <TableCell>
-                    <Badge variant={getPriorityColor(task.priority)}>
-                      {task.priority}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={getStatusColor(task.status)}>
-                      {task.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Button variant="ghost" size="icon">
-                      <MessageCircle className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
+          <div className="w-full overflow-x-auto">
+            <Table className="min-w-[600px] w-full">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12">Done</TableHead>
+                  <TableHead>Task</TableHead>
+                  <TableHead>Deadline</TableHead>
+                  <TableHead>Priority</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {tasks.map((task) => (
+                  <TableRow key={task.id}>
+                    <TableCell>
+                      <Checkbox
+                        checked={task.status === "Completed"}
+                        onCheckedChange={() => handleTaskComplete(task.id, task.status)}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <div>
+                        <div className={`font-medium ${task.status === "Completed" ? "line-through text-muted-foreground" : ""}`}>
+                          {task.title}
+                        </div>
+                        <div className="text-sm text-muted-foreground">{task.description}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell>{task.deadline}</TableCell>
+                    <TableCell>
+                      <Badge variant={getPriorityColor(task.priority)}>
+                        {task.priority}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={getStatusColor(task.status)}>
+                        {task.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="icon">
+                        <MessageCircle className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
           )}
         </CardContent>
       </Card>

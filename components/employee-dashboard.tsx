@@ -25,7 +25,7 @@ export function EmployeeDashboard({ user, onLogout }: EmployeeDashboardProps) {
       case "performance":
         return <MyPerformanceContent userId={user.id?.toString() || user.id} />
       case "attendance":
-        return <MyAttendanceContent userId={user.id?.toString() || user.id} />
+        return <MyAttendanceContent />
       default:
         return <MyTasksContent userId={user.id?.toString() || user.id} />
     }
@@ -42,30 +42,28 @@ export function EmployeeDashboard({ user, onLogout }: EmployeeDashboardProps) {
           showNotes={showNotes}
           setShowNotes={setShowNotes}
         />
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col overflow-hidden">
           <DashboardHeader 
             user={user} 
             onLogout={onLogout}
             showNotes={showNotes}
             setShowNotes={setShowNotes}
           />
-          <div className="flex-1 flex overflow-hidden">
-            <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-              <div className="mx-auto max-w-7xl">
-                {renderContent()}
-              </div>
-            </main>
-            {showNotes && (
-              <div className="w-full md:w-80 lg:w-96 border-l bg-background">
-                <NotesPanel 
-                  isOpen={showNotes} 
-                  onClose={() => setShowNotes(false)}
-                  userId={user.id}
-                  userRole="employee"
-                />
-              </div>
-            )}
-          </div>
+          <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+            <div className="mx-auto max-w-7xl">
+              {renderContent()}
+            </div>
+          </main>
+          {showNotes && (
+            <div className="w-full md:w-80 lg:w-96 border-l bg-background">
+              <NotesPanel 
+                isOpen={showNotes} 
+                onClose={() => setShowNotes(false)}
+                userId={user.id}
+                userRole="employee"
+              />
+            </div>
+          )}
         </div>
       </div>
     </SidebarProvider>

@@ -230,8 +230,8 @@ export function MyPerformanceContent({ userId }: MyPerformanceContentProps) {
                     tickCount={6}
                   />
                   <Tooltip 
-                    formatter={(value) => [`${value}/5`, 'Rating']}
-                    labelFormatter={(label) => `Period: ${label}`}
+                    formatter={(value: number) => [`${value}/5`, 'Rating']}
+                    labelFormatter={(label: string) => `Period: ${label}`}
                   />
                   <Line 
                     type="monotone" 
@@ -285,33 +285,35 @@ export function MyPerformanceContent({ userId }: MyPerformanceContentProps) {
               No performance ratings yet. Your supervisor will add ratings after evaluations.
             </div>
           ) : (
-            <div className="space-y-4">
-              {ratings.map((rating) => (
-                <div key={rating.id} className="border rounded-lg p-4">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-2">
-                    <div className="flex items-center space-x-2 mb-2 md:mb-0">
-                      <Badge variant="outline">{rating.period}</Badge>
-                      <div className="flex items-center">
-                        {renderStars(rating.rating)}
-                        <span className="ml-2 font-semibold">{rating.rating.toFixed(1)}/5</span>
+            <div className="w-full overflow-x-auto">
+              <div className="space-y-4 min-w-[400px]">
+                {ratings.map((rating) => (
+                  <div key={rating.id} className="border rounded-lg p-4">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-2">
+                      <div className="flex items-center space-x-2 mb-2 md:mb-0">
+                        <Badge variant="outline">{rating.period}</Badge>
+                        <div className="flex items-center">
+                          {renderStars(rating.rating)}
+                          <span className="ml-2 font-semibold">{rating.rating.toFixed(1)}/5</span>
+                        </div>
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        Rated by: {rating.rated_by_name}
                       </div>
                     </div>
-                    <div className="text-sm text-muted-foreground">
-                      Rated by: {rating.rated_by_name}
+                    {rating.feedback && (
+                      <div className="mt-2">
+                        <p className="text-sm md:text-base text-muted-foreground">
+                          <strong>Feedback:</strong> {rating.feedback}
+                        </p>
+                      </div>
+                    )}
+                    <div className="text-xs text-muted-foreground mt-2">
+                      {new Date(rating.created_at).toLocaleDateString()}
                     </div>
                   </div>
-                  {rating.feedback && (
-                    <div className="mt-2">
-                      <p className="text-sm md:text-base text-muted-foreground">
-                        <strong>Feedback:</strong> {rating.feedback}
-                      </p>
-                    </div>
-                  )}
-                  <div className="text-xs text-muted-foreground mt-2">
-                    {new Date(rating.created_at).toLocaleDateString()}
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
         </CardContent>
