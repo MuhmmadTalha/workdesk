@@ -1,6 +1,7 @@
 "use client"
 
 import { useAuth } from "@/contexts/auth-context"
+// Removed ThemeToggle import, already present in top bar
 import { AdminDashboard } from "@/components/admin-dashboard"
 import { EmployeeDashboard } from "@/components/employee-dashboard"
 import { LoadingScreen } from "@/components/loading-screen"

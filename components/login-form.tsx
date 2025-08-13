@@ -47,10 +47,7 @@ export default function LoginForm() {
       if (success) {
         setIsLoading(false);
         setShowSuccessLoading(true);
-        // Show success loading screen for 5 seconds
-        setTimeout(() => {
-          router.push("/dashboard");
-        }, 5000);
+        router.push("/dashboard");
       } else {
         setError("Invalid email or password. Please try again.");
         setIsLoading(false);
