@@ -1,6 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import React, { useState, useEffect } from "react"
+// Close notes panel on ESC key (desktop only)
+// (moved inside AdminDashboard function below)
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { AdminSidebar } from "@/components/admin-sidebar"
 import { DashboardContent } from "@/components/dashboard-content"
@@ -22,6 +24,18 @@ interface AdminDashboardProps {
 export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
   const [activeTab, setActiveTab] = useState("dashboard")
   const [showNotes, setShowNotes] = useState(false)
+
+  // Close notes panel on ESC key (desktop only)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && showNotes && window.innerWidth >= 768) {
+        e.preventDefault();
+        setShowNotes(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [showNotes]);
 
   const renderContent = () => {
     switch (activeTab) {

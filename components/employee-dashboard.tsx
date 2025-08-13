@@ -1,6 +1,9 @@
-"use client"
 
-import { useState } from "react"
+"use client"
+// Close notes panel on ESC key (desktop only)
+// ...existing code...
+
+import React, { useState, useEffect } from "react"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { EmployeeSidebar } from "@/components/employee-sidebar"
 import { MyTasksContent } from "@/components/my-tasks-content"
@@ -17,6 +20,18 @@ interface EmployeeDashboardProps {
 export function EmployeeDashboard({ user, onLogout }: EmployeeDashboardProps) {
   const [activeTab, setActiveTab] = useState("tasks")
   const [showNotes, setShowNotes] = useState(false)
+
+  // Close notes panel on ESC key (desktop only)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && showNotes && window.innerWidth >= 768) {
+        e.preventDefault();
+        setShowNotes(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [showNotes]);
 
   const renderContent = () => {
     switch (activeTab) {
@@ -54,17 +69,17 @@ export function EmployeeDashboard({ user, onLogout }: EmployeeDashboardProps) {
               {renderContent()}
             </div>
           </main>
-          {showNotes && (
-            <div className="w-full md:w-80 lg:w-96 border-l bg-background">
-              <NotesPanel 
-                isOpen={showNotes} 
-                onClose={() => setShowNotes(false)}
-                userId={user.id}
-                userRole="employee"
-              />
-            </div>
-          )}
         </div>
+        {showNotes && (
+          <div className="w-full md:w-80 lg:w-96 border-l bg-background">
+            <NotesPanel 
+              isOpen={showNotes} 
+              onClose={() => setShowNotes(false)}
+              userId={user.id}
+              userRole="employee"
+            />
+          </div>
+        )}
       </div>
     </SidebarProvider>
   )
