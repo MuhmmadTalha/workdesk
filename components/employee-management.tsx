@@ -13,6 +13,8 @@ import { UserPlus, CheckCircle, Ban, Mail, Calendar, Building, Pencil, Trash2, D
 import { EmptyState, SectionSkeleton } from "@/components/feedback-states"
 import { InitialsAvatar } from "@/components/initials-avatar"
 import { supabase, type Employee } from "@/lib/supabase"
+import { isDemoMode } from "@/lib/demo/mode"
+import { demoAdminApi } from "@/lib/demo/client"
 import { useLiveRefresh } from "@/lib/use-live-refresh"
 import { useToast } from "@/hooks/use-toast"
 import { splitForHighlight } from "@/lib/utils"
@@ -21,6 +23,7 @@ type Role = "admin" | "employee"
 
 /** Calls the server-side admin API (service role key never reaches the browser). */
 async function adminApi(method: "POST" | "PATCH" | "DELETE", body?: unknown, query = "") {
+  if (isDemoMode()) return demoAdminApi(method, body, query)
   const res = await fetch(`/api/admin/employees${query}`, {
     method,
     headers: body ? { "Content-Type": "application/json" } : undefined,

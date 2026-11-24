@@ -1,4 +1,6 @@
 import { createBrowserClient } from '@supabase/ssr'
+import { demoClient } from './demo/client'
+import { isDemoMode } from './demo/mode'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -12,10 +14,21 @@ if (!isSupabaseConfigured && typeof window !== 'undefined') {
 
 // Browser client. The session lives in cookies so middleware and API routes can read it.
 // Row Level Security in the database decides what each signed-in user may see or change.
-export const supabase = createBrowserClient(
+const realClient = createBrowserClient(
   supabaseUrl || 'https://not-configured.supabase.co',
   supabaseAnonKey || 'not-configured'
 )
+
+// In demo mode (see lib/demo) every call goes to a localStorage-backed stand-in, so
+// visitors can try the app without an account and nothing is written to Supabase.
+// The check runs on each property access, so entering/leaving the demo needs no reload.
+export const supabase = new Proxy(realClient, {
+  get(_target, prop) {
+    const client: any = isDemoMode() ? demoClient : realClient
+    const value = client[prop]
+    return typeof value === 'function' ? value.bind(client) : value
+  },
+})
 
 // Types for our database
 export interface Employee {

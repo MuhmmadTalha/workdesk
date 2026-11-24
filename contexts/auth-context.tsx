@@ -3,6 +3,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { supabase, isSupabaseConfigured } from "@/lib/supabase"
+import { isDemoMode, setDemoMode } from "@/lib/demo/mode"
+import { setSessionUserId, DEMO_ADMIN_ID, DEMO_EMPLOYEE_ID } from "@/lib/demo/store"
 
 export interface User {
   id: string
@@ -17,6 +19,9 @@ export interface User {
 interface AuthContextType {
   user: User | null
   login: (email: string, password: string) => Promise<boolean>
+  /** One-click sign-in to the localStorage demo (no account, nothing saved to the database). */
+  loginDemo: (role: "admin" | "employee") => Promise<boolean>
+  isDemo: boolean
   logout: () => Promise<void>
   changePassword: (newPassword: string) => Promise<{ ok: boolean; error?: string }>
   isLoading: boolean
@@ -60,6 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(false)
   const [isAuthLoading, setIsAuthLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isDemo, setIsDemo] = useState(false)
   const router = useRouter()
 
   const refreshFromSession = useCallback(async () => {
@@ -78,7 +84,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    if (!isSupabaseConfigured) {
+    setIsDemo(isDemoMode())
+    if (!isSupabaseConfigured && !isDemoMode()) {
       setIsAuthLoading(false)
       return
     }
@@ -94,6 +101,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true)
     setError(null)
+
+    // A real sign-in always leaves the demo.
+    if (isDemoMode()) {
+      await supabase.auth.signOut()
+      setDemoMode(false)
+      setIsDemo(false)
+    }
 
     try {
       if (!isSupabaseConfigured) {
@@ -136,6 +150,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const loginDemo = async (role: "admin" | "employee"): Promise<boolean> => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      // Leave any real Supabase session first so the two never mix.
+      if (!isDemoMode() && isSupabaseConfigured) await supabase.auth.signOut()
+      setDemoMode(true)
+      setIsDemo(true)
+      setSessionUserId(role === "admin" ? DEMO_ADMIN_ID : DEMO_EMPLOYEE_ID)
+      const profile = await loadProfile(role === "admin" ? DEMO_ADMIN_ID : DEMO_EMPLOYEE_ID)
+      if (!profile || !profile.isVerified) {
+        setError("The demo data looks broken. Reset it from the demo banner or clear this site's storage.")
+        return false
+      }
+      setUser(profile)
+      return true
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const changePassword = async (newPassword: string) => {
     if (newPassword.length < 8) {
       return { ok: false, error: "Password must be at least 8 characters." }
@@ -147,12 +182,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     await supabase.auth.signOut()
+    // Demo data stays in this browser, so a visitor can sign back in as the other role
+    // and see what they just did (e.g. the task the admin assigned).
+    if (isDemoMode()) {
+      setDemoMode(false)
+      setIsDemo(false)
+    }
     setUser(null)
     router.push("/login")
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, changePassword, isLoading, isAuthLoading, error }}>
+    <AuthContext.Provider value={{ user, login, loginDemo, isDemo, logout, changePassword, isLoading, isAuthLoading, error }}>
       {children}
     </AuthContext.Provider>
   )

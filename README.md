@@ -7,6 +7,17 @@
 
 Next.js 15 + Supabase app with admin and employee dashboards: employees, tasks, attendance (check-in/out), performance ratings and private notes.
 
+## Try the demo
+
+On the sign-in page, click **Demo admin** or **Demo employee**. You don't need an account.
+
+- The demo runs on sample data stored in your browser's `localStorage`. Nothing is sent to the database.
+- Try it like this: as admin, create a task and assign it to **Sam Rivera**. Click **View as Employee** in the yellow banner and you'll see the task and its notification. Mark it done, switch back, and the admin gets a "completed" notification.
+- **Reset data** in the banner restores the sample data.
+- Changing passwords and deleting or deactivating the two built-in demo accounts are turned off.
+
+How it works: `lib/demo/` has a small stand-in for the Supabase client (queries, joins, check-in/out, realtime, notification triggers). `lib/supabase.ts` switches to it while the `workdesk-demo` cookie is set.
+
 ## Features
 
 - Role-based workspaces for admins and employees.

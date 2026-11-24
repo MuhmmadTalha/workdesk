@@ -9,6 +9,7 @@ import { LiveTime } from "@/components/live-time"
 import { AvailabilityButton } from "@/components/availability-button"
 import { ChangePasswordDialog } from "@/components/change-password-dialog"
 import { NotificationBell } from "@/components/notification-bell"
+import { DemoBanner } from "@/components/demo-banner"
 import { APP_NAME } from "@/lib/brand"
 import type { User } from "@/contexts/auth-context"
 
@@ -24,6 +25,8 @@ export function DashboardHeader({ user, title, showNotes, setShowNotes, onNaviga
   const [showPasswordDialog, setShowPasswordDialog] = useState(false)
 
   return (
+    <>
+    <DemoBanner />
     <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b bg-background/85 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/70 sm:px-4">
       <SidebarTrigger className="size-8 text-muted-foreground hover:text-foreground" />
       <div className="h-5 w-px bg-border" aria-hidden="true" />
@@ -62,5 +65,6 @@ export function DashboardHeader({ user, title, showNotes, setShowNotes, onNaviga
 
       <ChangePasswordDialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog} />
     </header>
+    </>
   )
 }
