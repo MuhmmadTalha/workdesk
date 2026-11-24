@@ -1,22 +1,32 @@
 # Workdesk
 
+![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)
+![Supabase](https://img.shields.io/badge/Supabase-Auth%20%2B%20Postgres-green?logo=supabase)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-38bdf8?logo=tailwindcss)
+
 Next.js 15 + Supabase app with admin and employee dashboards: employees, tasks, attendance (check-in/out), performance ratings and private notes.
 
 ## Features
 
 - Role-based workspaces for admins and employees.
 - Employee directory with account creation, profile edits, password resets, activation/deactivation and deletion.
-- Multi-assignee task management with per-assignee progress, priorities, deadlines and cancellation.
+- Multi-assignee task management with per-assignee progress, priorities, deadlines, editing and cancellation.
 - Attendance records with employee check-in/out and admin-managed statuses.
 - Performance ratings and feedback, including an employee-facing rating history.
-- Private personal notes, dark mode, responsive sidebar navigation and clear loading, empty and error states.
+- Private personal notes in a floating window, dark mode, responsive sidebar navigation and clear loading, empty and error states.
 - Live data refresh and in-app notifications for assignments, task changes, completion, ratings and attendance updates.
 
 ## Tech stack
 
-- Next.js 15, React 19 and TypeScript
-- Supabase Auth, Postgres, Row Level Security and Realtime
-- Tailwind CSS, Radix UI and Lucide icons
+| Layer | Technology |
+| ----- | ---------- |
+| Framework | [Next.js 15](https://nextjs.org/) (App Router), React 19 |
+| Language | TypeScript 5 |
+| Backend | [Supabase](https://supabase.com/): Auth, Postgres, Row Level Security, Realtime |
+| UI | [Tailwind CSS 4](https://tailwindcss.com/), [Radix UI](https://www.radix-ui.com/) / shadcn/ui, [Lucide](https://lucide.dev/) icons |
+| Charts | [Recharts](https://recharts.org/) |
+| Validation | [Zod](https://zod.dev/) (server API input) |
 
 ## How security works
 
@@ -29,7 +39,7 @@ Next.js 15 + Supabase app with admin and employee dashboards: employees, tasks, 
 
 - Node.js 20 or newer
 - pnpm
-- A Supabase project
+- A Supabase project (free tier is fine)
 
 ## Setup (new Supabase project)
 
@@ -55,7 +65,14 @@ Next.js 15 + Supabase app with admin and employee dashboards: employees, tasks, 
    ```
    Open <http://localhost:3000>, sign in as the admin, then add employees from the **Employees** page. You give each one a temporary password, and they can change it with the key icon in the top bar.
 
-When you deploy (e.g. Vercel), add the same three environment variables in the hosting dashboard.
+## Deployment
+
+Deploy with [Vercel](https://vercel.com) (or any Next.js host):
+
+1. Push the repository to GitHub and import it in the Vercel dashboard.
+2. Add the three environment variables: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+3. In Supabase → Authentication → URL Configuration, set the **Site URL** (and Redirect URLs) to your production domain.
+4. Deploy.
 
 ## Project layout
 
@@ -76,7 +93,9 @@ When you deploy (e.g. Vercel), add the same three environment variables in the h
 | ---------------- | -------------------------------- |
 | `pnpm dev`       | Start the dev server             |
 | `pnpm build`     | Production build (type-checked)  |
+| `pnpm start`     | Run the production build         |
 | `pnpm typecheck` | Run TypeScript without building  |
+| `pnpm lint`      | Run ESLint                       |
 
 ## Notes
 
@@ -84,3 +103,7 @@ When you deploy (e.g. Vercel), add the same three environment variables in the h
 - Forgot password: an admin resets it from the Employees page (key icon on the employee's row).
 - Deactivating an employee blocks their login but keeps their history. Deleting removes the account and its records.
 - Check-in/out shows in the top bar for employees between 9:00 and 18:00 local time.
+
+## License
+
+This project is open source and available under the [MIT License](LICENSE).
