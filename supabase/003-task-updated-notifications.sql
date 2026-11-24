@@ -16,12 +16,12 @@ begin
     return new;
   end if;
 
-  if new.title       is distinct from old.title       then v_changes := v_changes || 'title'; end if;
-  if new.description is distinct from old.description then v_changes := v_changes || 'description'; end if;
+  if new.title       is distinct from old.title       then v_changes := array_append(v_changes, 'title'); end if;
+  if new.description is distinct from old.description then v_changes := array_append(v_changes, 'description'); end if;
   if new.deadline    is distinct from old.deadline    then
-    v_changes := v_changes || coalesce('due ' || to_char(new.deadline, 'Mon DD'), 'deadline removed');
+    v_changes := array_append(v_changes, coalesce('due ' || to_char(new.deadline, 'Mon DD'), 'deadline removed'));
   end if;
-  if new.priority    is distinct from old.priority    then v_changes := v_changes || (new.priority || ' priority'); end if;
+  if new.priority    is distinct from old.priority    then v_changes := array_append(v_changes, new.priority || ' priority'); end if;
 
   if array_length(v_changes, 1) is null then
     return new;

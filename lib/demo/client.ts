@@ -22,8 +22,8 @@ const quarter = () => `Q${Math.floor(new Date().getMonth() / 3) + 1} ${new Date(
 const DEFAULTS: Record<TableName, () => Row> = {
   employees: () => ({ role: "employee", is_verified: true, department: null, position: null, hire_date: localDate(), updated_at: new Date().toISOString() }),
   notes: () => ({ employee_id: getSessionUserId(), updated_at: new Date().toISOString() }),
-  tasks: () => ({ description: null, deadline: null, status: "Pending", priority: "Medium", created_by: getSessionUserId(), updated_at: new Date().toISOString() }),
-  task_assignments: () => ({ status: "Pending", assigned_at: new Date().toISOString(), completed_at: null }),
+  tasks: () => ({ description: null, deadline: null, status: "Pending", priority: "Medium", created_by: getSessionUserId(), updated_at: new Date().toISOString(), completed_at: null, admin_sort_order: -Date.now() / 1000, admin_archived_at: null }),
+  task_assignments: () => ({ status: "Pending", assigned_at: new Date().toISOString(), completed_at: null, sort_order: -Date.now() / 1000, archived_at: null }),
   attendance: () => ({ status: "present", hours_worked: 0, check_in_time: null, check_out_time: null, notes: null }),
   performance_ratings: () => ({ period: quarter(), feedback: null, rated_by: getSessionUserId() }),
   notifications: () => ({ read_at: null }),
@@ -112,7 +112,7 @@ function project(db: DemoDB, table: TableName, row: Row, fields: Field[]): Row |
 }
 
 // ---------------------------------------------------------------------------
-// Triggers (port of supabase/002-*.sql and 003-*.sql)
+// Triggers (port of supabase/002-*.sql, 003-*.sql and 005-*.sql)
 // ---------------------------------------------------------------------------
 const monDD = (date: string) =>
   new Date(`${date}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "2-digit" })
@@ -139,6 +139,10 @@ function runTriggers(db: DemoDB, table: TableName, op: "INSERT" | "UPDATE", next
     const name = db.employees.find(e => e.id === next.employee_id)?.name ?? "An employee"
     db.employees.filter(e => e.role === "admin" && e.is_verified).forEach(a =>
       notify(db, a.id, "task_completed", `${name} completed a task`, title, "tasks", events))
+  }
+  // 005: tasks.completed_at follows the status (a "before update" trigger in SQL).
+  if (table === "tasks" && op === "UPDATE" && prev && next.status !== prev.status) {
+    next.completed_at = next.status === "Completed" ? new Date().toISOString() : null
   }
   if (table === "tasks" && op === "UPDATE" && prev) {
     const assignees = db.task_assignments.filter(a => a.task_id === next.id).map(a => a.employee_id)

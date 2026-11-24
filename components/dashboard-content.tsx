@@ -297,7 +297,7 @@ export function DashboardContent({ userName, onNavigate }: { userName?: string; 
 function HorizontalBars({ data, name, color, max }: { data: { name: string; value: number }[]; name: string; color: string; max?: number }) {
   const height = Math.max(96, data.length * 44 + 24)
   return (
-    <div className="space-y-2">
+    <div className="relative space-y-2">
       <ResponsiveContainer width="100%" height={height}>
         <BarChart data={data} layout="vertical" margin={{ left: 0, right: 24, top: 4, bottom: 4 }}>
           <CartesianGrid horizontal={false} stroke="var(--border)" />

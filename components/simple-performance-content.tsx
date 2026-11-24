@@ -302,10 +302,10 @@ export default function SimplePerformanceContent() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div>
+            <div className="space-y-2">
               <Label htmlFor="employee">Employee</Label>
               <Select value={selectedEmployee} onValueChange={setSelectedEmployee} disabled={!!editingRating}>
-                <SelectTrigger>
+                <SelectTrigger id="employee" className="w-full">
                   <SelectValue placeholder="Select an employee" />
                 </SelectTrigger>
                 <SelectContent>
@@ -318,10 +318,10 @@ export default function SimplePerformanceContent() {
               </Select>
             </div>
 
-            <div>
+            <div className="space-y-2">
               <Label htmlFor="rating">Rating (1-5)</Label>
               <Select value={rating} onValueChange={setRating}>
-                <SelectTrigger>
+                <SelectTrigger id="rating" className="w-full">
                   <SelectValue placeholder="Select rating" />
                 </SelectTrigger>
                 <SelectContent>
@@ -334,7 +334,7 @@ export default function SimplePerformanceContent() {
               </Select>
             </div>
 
-            <div>
+            <div className="space-y-2">
               <Label htmlFor="feedback">Feedback</Label>
               <Textarea
                 id="feedback"

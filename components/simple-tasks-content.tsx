@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { supabase } from '@/lib/supabase'
 import { useLiveRefresh } from "@/lib/use-live-refresh"
 import { Button } from "@/components/ui/button"
@@ -10,7 +10,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, X, UserPlus, CheckCircle, XCircle, Search, Filter, Check, ClipboardList, CalendarDays, Flag, Pencil, Clock3, Circle } from 'lucide-react'
+import { Plus, X, UserPlus, CheckCircle, XCircle, Search, Filter, Check, ClipboardList, CalendarDays, Flag, Pencil, Clock3, Circle, Archive, ArchiveRestore, Download, Trash2 } from 'lucide-react'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import { Reorder, SortableItem, DragHandle, HandleZone, sortValueAt, reorderIds } from '@/components/sortable-list'
+import { Switch } from "@/components/ui/switch"
+import { downloadCsv, csvDateTime, csvDateStamp } from '@/lib/csv'
 import { InitialsAvatar } from '@/components/initials-avatar'
 import { EmptyState, SectionSkeleton, Pill, statusTone, priorityTone } from '@/components/feedback-states'
 import { useToast } from "@/hooks/use-toast"
@@ -26,7 +30,16 @@ interface TaskRow {
   status: TaskStatus
   priority: string
   created_at: string
-  task_assignments: { employee_id: string; status: string; employees: { name: string } | null }[]
+  completed_at: string | null
+  admin_sort_order: number
+  admin_archived_at: string | null
+  task_assignments: {
+    employee_id: string
+    status: string
+    assigned_at: string
+    completed_at: string | null
+    employees: { name: string } | null
+  }[]
 }
 
 interface EmployeeOption {
@@ -76,6 +89,15 @@ export function SimpleTasksContent() {
   const [formData, setFormData] = useState(emptyForm)
   const [editingTask, setEditingTask] = useState<TaskRow | null>(null)
   const [saving, setSaving] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
+  // While dragging: the on-screen order of task ids (null = use the saved order).
+  const [dragOrder, setDragOrderState] = useState<string[] | null>(null)
+  // Ref copy so the drag-end handler always sees the latest order.
+  const dragOrderRef = useRef<string[] | null>(null)
+  const setDragOrder = (ids: string[] | null) => { dragOrderRef.current = ids; setDragOrderState(ids) }
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [taskToDelete, setTaskToDelete] = useState<TaskRow | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const { toast } = useToast()
 
   const openCreate = () => {
@@ -141,7 +163,8 @@ export function SimpleTasksContent() {
       // Load tasks with their assignees (task_assignments is the single source of truth)
       const { data: taskData, error: taskError } = await supabase
         .from('tasks')
-        .select('id, title, description, deadline, status, priority, created_at, task_assignments(employee_id, status, employees(name))')
+        .select('id, title, description, deadline, status, priority, created_at, completed_at, admin_sort_order, admin_archived_at, task_assignments(employee_id, status, assigned_at, completed_at, employees(name))')
+        .order('admin_sort_order', { ascending: true })
         .order('created_at', { ascending: false })
 
       if (taskError) {
@@ -191,6 +214,78 @@ export function SimpleTasksContent() {
         variant: "destructive"
       })
     }
+  }
+
+  /**
+   * Save `id` at its place in `ids` (the order on screen). Only the moved task is
+   * written: it gets a sort value halfway between its new neighbours.
+   */
+  const placeTask = async (ids: string[], id: string) => {
+    const byId = new Map(tasks.map(t => [t.id, t]))
+    const index = ids.indexOf(id)
+    const orders = ids.map(x => byId.get(x)?.admin_sort_order ?? 0)
+    const newOrder = sortValueAt(orders, index)
+    if (byId.get(id)?.admin_sort_order === newOrder || index < 0) { setDragOrder(null); return }
+    setTasks(prev => prev
+      .map(t => t.id === id ? { ...t, admin_sort_order: newOrder } : t)
+      .sort((x, y) => x.admin_sort_order - y.admin_sort_order))
+    setDragOrder(null)
+    const { error } = await supabase.from('tasks').update({ admin_sort_order: newOrder }).eq('id', id)
+    if (error) {
+      toast({ title: "Error", description: `Failed to move task: ${error.message}`, variant: "destructive" })
+      loadData(true)
+    }
+  }
+
+  const deleteTask = async () => {
+    if (!taskToDelete) return
+    setDeleting(true)
+    // Assignments are removed with it (on delete cascade), so it disappears for everyone.
+    const { error } = await supabase.from('tasks').delete().eq('id', taskToDelete.id)
+    setDeleting(false)
+    if (error) {
+      toast({ title: "Error", description: `Failed to delete task: ${error.message}`, variant: "destructive" })
+      return
+    }
+    setTasks(prev => prev.filter(t => t.id !== taskToDelete.id))
+    toast({ title: "Task deleted", description: `"${taskToDelete.title}" was removed for everyone.` })
+    setTaskToDelete(null)
+    loadData(true)
+  }
+
+  const setArchived = async (task: TaskRow, archived: boolean) => {
+    const { error } = await supabase
+      .from('tasks')
+      .update({ admin_archived_at: archived ? new Date().toISOString() : null })
+      .eq('id', task.id)
+    if (error) {
+      toast({ title: "Error", description: `Failed to ${archived ? 'archive' : 'unarchive'} task: ${error.message}`, variant: "destructive" })
+      return
+    }
+    toast({
+      title: archived ? "Task archived" : "Task restored",
+      description: archived ? `"${task.title}" is hidden from your list. Assignees still see it.` : `"${task.title}" is back in your list.`,
+    })
+    loadData(true)
+  }
+
+  const exportCsv = () => {
+    const headers = ['Task', 'Priority', 'Deadline', 'Task status', 'Task created', 'Task completed at',
+      'Employee', 'Employee status', 'Assigned at', 'Employee completed at', 'Archived']
+    const rows: string[][] = []
+    for (const t of tasks) {
+      const base = [t.title, t.priority, t.deadline ?? '', t.status, csvDateTime(t.created_at), csvDateTime(t.completed_at)]
+      const archived = t.admin_archived_at ? 'Yes' : 'No'
+      if (t.task_assignments.length === 0) {
+        rows.push([...base, '', '', '', '', archived])
+      } else {
+        for (const a of t.task_assignments) {
+          rows.push([...base, a.employees?.name || 'Former employee', a.status,
+            csvDateTime(a.assigned_at), csvDateTime(a.completed_at), archived])
+        }
+      }
+    }
+    downloadCsv(`tasks_${csvDateStamp()}.csv`, headers, rows)
   }
 
   const saveEditedTask = async (task: TaskRow) => {
@@ -331,16 +426,18 @@ export function SimpleTasksContent() {
   const today = localDateString()
   // Filter tasks based on search query and filter type
   const trimmedQuery = searchQuery.trim().toLowerCase();
-  let filteredTasks = tasks;
+  const archivedCount = tasks.filter(t => t.admin_archived_at).length
+  const viewTasks = tasks.filter(t => showArchived ? !!t.admin_archived_at : !t.admin_archived_at)
+  let filteredTasks = viewTasks;
   if (trimmedQuery) {
     if (searchFilter === "title") {
-      filteredTasks = tasks.filter(task => task.title.toLowerCase().includes(trimmedQuery));
+      filteredTasks = viewTasks.filter(task => task.title.toLowerCase().includes(trimmedQuery));
     } else if (searchFilter === "employee") {
-      filteredTasks = tasks.filter(task => assigneeNames(task).some(name => name.toLowerCase().includes(trimmedQuery)));
+      filteredTasks = viewTasks.filter(task => assigneeNames(task).some(name => name.toLowerCase().includes(trimmedQuery)));
     } else if (searchFilter === "due") {
-      filteredTasks = tasks.filter(task => (task.deadline || "").toLowerCase().includes(trimmedQuery));
+      filteredTasks = viewTasks.filter(task => (task.deadline || "").toLowerCase().includes(trimmedQuery));
     } else if (searchFilter === "priority") {
-      filteredTasks = tasks.filter(task => (task.priority || "").toLowerCase().includes(trimmedQuery));
+      filteredTasks = viewTasks.filter(task => (task.priority || "").toLowerCase().includes(trimmedQuery));
     }
   }
   // Highlight helper for title only
@@ -353,8 +450,37 @@ export function SimpleTasksContent() {
     );
   }
 
+  // What's on screen: the saved order, or the live order while a task is being dragged.
+  const filteredIds = filteredTasks.map(t => t.id)
+  const shownIds = dragOrder && dragOrder.length === filteredIds.length && dragOrder.every(id => filteredIds.includes(id))
+    ? dragOrder
+    : filteredIds
+  const shownTasks = shownIds.map(id => filteredTasks.find(t => t.id === id)!).filter(Boolean)
+
   return (
     <div className="space-y-6">
+      <AlertDialog open={!!taskToDelete} onOpenChange={(open) => { if (!open && !deleting) setTaskToDelete(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this task for everyone?</AlertDialogTitle>
+            <AlertDialogDescription>
+              &ldquo;{taskToDelete?.title}&rdquo; and every assignee&apos;s progress on it will be permanently removed.
+              It will no longer appear in anyone&apos;s list, charts or exports. This can&apos;t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Keep task</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={(e) => { e.preventDefault(); deleteTask() }}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {deleting ? 'Deleting…' : 'Delete task'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
@@ -388,6 +514,10 @@ export function SimpleTasksContent() {
               </Select>
             </div>
           </div>
+          <Button variant="outline" onClick={exportCsv} disabled={tasks.length === 0} className="w-full md:w-auto">
+            <Download className="mr-2 h-4 w-4" aria-hidden="true" />
+            Export CSV
+          </Button>
           <Button onClick={openCreate} className="w-full md:w-auto">
             <Plus className="mr-2 h-4 w-4" />
             Create New Task
@@ -523,14 +653,28 @@ export function SimpleTasksContent() {
       {/* Tasks List */}
       <Card>
         <CardHeader>
-          <CardTitle>All Tasks ({filteredTasks.length})</CardTitle>
-          <CardDescription>
-            {employees.length} employees available for assignment
-          </CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>{showArchived ? 'Archived Tasks' : 'All Tasks'} ({filteredTasks.length})</CardTitle>
+              <CardDescription className="mt-1.5">
+                {showArchived
+                  ? 'Hidden from your list only. Assignees still see these tasks.'
+                  : `${employees.length} employees available for assignment`}
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch id="admin-show-archived" checked={showArchived} onCheckedChange={setShowArchived} />
+              <Label htmlFor="admin-show-archived" className="cursor-pointer text-sm font-normal">
+                Show archived{archivedCount > 0 ? ` (${archivedCount})` : ''}
+              </Label>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {filteredTasks.length === 0 ? (
-            searchQuery ? (
+            showArchived && !searchQuery ? (
+              <EmptyState icon={Archive} title="No archived tasks" description="Tasks you archive show up here." />
+            ) : searchQuery ? (
               <EmptyState icon={Search} title="No matching tasks" description="Try a different search term or filter." />
             ) : (
               <EmptyState
@@ -541,16 +685,32 @@ export function SimpleTasksContent() {
               />
             )
           ) : (
-            <div className="space-y-3">
-              {filteredTasks.map((task) => {
+            <Reorder.Group axis="y" values={shownIds} onReorder={setDragOrder} as="div" className="space-y-3">
+              {shownTasks.map((task, index) => {
                 const closed = task.status === "Completed" || task.status === "Cancelled"
                 const overdue = !closed && !!task.deadline && task.deadline < today
                 return (
-                <div
+                <SortableItem
                   key={task.id}
-                  className={`relative overflow-hidden rounded-lg border bg-card p-4 pl-5 transition-colors duration-150 hover:bg-muted/40 ${closed ? 'opacity-75' : ''}`}
+                  id={task.id}
+                  onDragStart={() => { setDraggingId(task.id); setDragOrder(shownIds) }}
+                  onDragEnd={() => { const ids = dragOrderRef.current ?? shownIds; setDraggingId(null); placeTask(ids, task.id) }}
+                  className={`overflow-hidden rounded-lg border bg-card p-4 pl-12 transition-colors duration-150 hover:bg-muted/40 ${closed && draggingId !== task.id ? 'opacity-75' : ''}`}
                 >
+                  {(controls, dragging) => (<>
                   <span className={`absolute inset-y-0 left-0 w-1 ${priorityStripe[task.priority] ?? 'bg-muted-foreground/30'}`} aria-hidden="true" />
+                  {/* Left corner: hovering here reveals the move handle. */}
+                  <HandleZone className="absolute inset-y-0 left-0 w-11 pl-2.5 pt-3.5">
+                    <DragHandle
+                      controls={controls}
+                      title={task.title}
+                      priority={task.priority}
+                      isFirst={index === 0}
+                      isLast={index === shownTasks.length - 1}
+                      active={dragging}
+                      onMoveTo={(target) => placeTask(reorderIds(shownIds, task.id, target), task.id)}
+                    />
+                  </HandleZone>
                   <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -607,6 +767,14 @@ export function SimpleTasksContent() {
                           </span>
                         </div>
                       )}
+                      <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                        <Button size="sm" variant="ghost" onClick={() => setArchived(task, !task.admin_archived_at)}
+                          className="text-muted-foreground hover:text-foreground"
+                          aria-label={`${task.admin_archived_at ? 'Unarchive' : 'Archive'} "${task.title}"`}>
+                          {task.admin_archived_at
+                            ? <><ArchiveRestore aria-hidden="true" />Unarchive</>
+                            : <><Archive aria-hidden="true" />Archive</>}
+                        </Button>
                       {task.status !== 'Cancelled' && (
                         <div className="flex gap-2">
                           <Button size="sm" variant="ghost" onClick={() => openEdit(task)}
@@ -626,12 +794,19 @@ export function SimpleTasksContent() {
                           )}
                         </div>
                       )}
+                        <Button size="icon" variant="ghost" onClick={() => setTaskToDelete(task)}
+                          className="size-8 text-muted-foreground hover:bg-danger-soft hover:text-destructive"
+                          aria-label={`Delete "${task.title}"`} title="Delete for everyone">
+                          <Trash2 aria-hidden="true" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
+                  </>)}
+                </SortableItem>
                 )
               })}
-            </div>
+            </Reorder.Group>
           )}
         </CardContent>
       </Card>

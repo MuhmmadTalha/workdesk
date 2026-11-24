@@ -53,7 +53,7 @@ export function EmployeeDashboard({ user, onLogout }: EmployeeDashboardProps) {
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-svh w-full bg-background">
+      <div className="flex h-svh w-full overflow-hidden bg-background">
         <AppSidebar
           items={NAV_ITEMS}
           activeTab={activeTab}
@@ -63,7 +63,7 @@ export function EmployeeDashboard({ user, onLogout }: EmployeeDashboardProps) {
           showNotes={showNotes}
           setShowNotes={setShowNotes}
         />
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <DashboardHeader
             user={user}
             title={NAV_ITEMS.find(i => i.id === activeTab)?.title ?? ""}

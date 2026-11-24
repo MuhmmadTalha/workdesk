@@ -77,16 +77,21 @@ function seed(): DemoDB {
     createdDaysAgo: number, status: string, assignees: [string, string][],
   ) => {
     const id = uid()
+    const createdAt = isoDaysAgo(createdDaysAgo)
+    const sortOrder = -new Date(createdAt).getTime() / 1000
     tasks.push({
       id, title, description, priority, status,
       deadline: deadlineIn === null ? null : localDate(daysFromNow(deadlineIn)),
-      created_by: DEMO_ADMIN_ID, created_at: isoDaysAgo(createdDaysAgo), updated_at: isoDaysAgo(createdDaysAgo),
+      created_by: DEMO_ADMIN_ID, created_at: createdAt, updated_at: createdAt,
+      completed_at: status === "Completed" ? isoDaysAgo(Math.max(0, createdDaysAgo - 2), 17) : null,
+      admin_sort_order: sortOrder, admin_archived_at: null,
     })
     for (const [employee_id, s] of assignees) {
       task_assignments.push({
         id: uid(), task_id: id, employee_id, status: s,
-        assigned_at: isoDaysAgo(createdDaysAgo),
+        assigned_at: createdAt,
         completed_at: s === "Completed" ? isoDaysAgo(Math.max(0, createdDaysAgo - 2), 16) : null,
+        sort_order: sortOrder, archived_at: null,
       })
     }
   }
@@ -172,10 +177,46 @@ function seed(): DemoDB {
 // ---------------------------------------------------------------------------
 // Persistence
 // ---------------------------------------------------------------------------
+const PURGE_AFTER_MS = 30 * 864e5
+
+/**
+ * Bring demo data saved by an older version up to date (columns from
+ * supabase/005-*.sql), and drop tasks completed more than 30 days ago, the
+ * same rule as public.purge_completed_tasks(), since the demo has no cron.
+ * Returns true when something changed.
+ */
+function upgradeAndPurge(db: DemoDB): boolean {
+  let changed = false
+  const epoch = (iso: string | null | undefined) => -new Date(iso ?? Date.now()).getTime() / 1000
+  for (const t of db.tasks) {
+    if (typeof t.admin_sort_order !== "number") { t.admin_sort_order = epoch(t.created_at); changed = true }
+    if (!("admin_archived_at" in t)) { t.admin_archived_at = null; changed = true }
+    if (!("completed_at" in t)) { t.completed_at = t.status === "Completed" ? t.updated_at ?? null : null; changed = true }
+  }
+  for (const a of db.task_assignments) {
+    if (typeof a.sort_order !== "number") { a.sort_order = epoch(a.assigned_at); changed = true }
+    if (!("archived_at" in a)) { a.archived_at = null; changed = true }
+  }
+  const cutoff = Date.now() - PURGE_AFTER_MS
+  const purged = new Set(db.tasks
+    .filter(t => t.status === "Completed" && t.completed_at && new Date(t.completed_at).getTime() < cutoff)
+    .map(t => t.id))
+  if (purged.size) {
+    db.tasks = db.tasks.filter(t => !purged.has(t.id))
+    db.task_assignments = db.task_assignments.filter(a => !purged.has(a.task_id))
+    changed = true
+  }
+  return changed
+}
+
 export function readDB(): DemoDB {
   try {
     const raw = localStorage.getItem(DB_KEY)
-    if (raw) return JSON.parse(raw) as DemoDB
+    if (raw) {
+      const db = JSON.parse(raw) as DemoDB
+      if (upgradeAndPurge(db)) writeDB(db)
+      return db
+    }
   } catch {
     // Corrupt or unavailable storage: fall through and reseed.
   }

@@ -18,6 +18,7 @@ import { demoAdminApi } from "@/lib/demo/client"
 import { useLiveRefresh } from "@/lib/use-live-refresh"
 import { useToast } from "@/hooks/use-toast"
 import { splitForHighlight } from "@/lib/utils"
+import { downloadCsv, csvDateStamp } from "@/lib/csv"
 
 type Role = "admin" | "employee"
 
@@ -40,10 +41,6 @@ function generatePassword(length = 12) {
   const values = new Uint32Array(length)
   crypto.getRandomValues(values)
   return Array.from(values, v => chars[v % chars.length]).join("")
-}
-
-function csvCell(value: string) {
-  return `"${value.replace(/"/g, '""')}"`
 }
 
 export function EmployeeManagement({ currentUserId }: { currentUserId: string }) {
@@ -132,13 +129,7 @@ export function EmployeeManagement({ currentUserId }: { currentUserId: string })
       e.is_verified ? "Active" : "Deactivated",
       e.hire_date || "",
     ])
-    const csv = [headers, ...rows].map(row => row.map(csvCell).join(",")).join("\n")
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }))
-    const link = document.createElement("a")
-    link.href = url
-    link.download = `employees_${new Date().toISOString().split("T")[0]}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
+    downloadCsv(`employees_${csvDateStamp()}.csv`, headers, rows)
   }
 
   const statusBadge = (employee: Employee) =>
