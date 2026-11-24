@@ -1,17 +1,18 @@
 "use client"
 
-"use client"
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
 import LoginForm from "@/components/login-form"
-
-import { ThemeToggle } from "@/components/ui/theme-toggle"
+import { useAuth } from "@/contexts/auth-context"
 
 export default function LoginPage() {
-  return (
-    <div className="relative min-h-screen">
-      <ThemeToggle />
-      <div className="flex items-center justify-center min-h-screen">
-        <LoginForm />
-      </div>
-    </div>
-  )
+  const { user, isAuthLoading } = useAuth()
+  const router = useRouter()
+
+  // Already signed in → go straight to the dashboard.
+  useEffect(() => {
+    if (!isAuthLoading && user) router.replace("/dashboard")
+  }, [user, isAuthLoading, router])
+
+  return <LoginForm />
 }

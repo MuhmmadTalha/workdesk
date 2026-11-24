@@ -1,34 +1,30 @@
+"use client"
 
-import { useTheme } from 'next-themes';
-import { Button } from '@/components/ui/button';
-import { Moon, Sun } from 'lucide-react';
-import { useCallback } from 'react';
+import { useEffect, useState } from "react"
+import { useTheme } from "next-themes"
+import { Moon, Sun } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 
-export function ThemeToggle() {
-  const { resolvedTheme, setTheme } = useTheme();
+export function ThemeToggle({ className }: { className?: string }) {
+  const { resolvedTheme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
-  // Use callback to avoid hydration mismatch and update instantly
-  const handleToggle = useCallback(() => {
-    setTheme(resolvedTheme === 'dark' ? 'light' : 'dark');
-    // Force update of document class for instant effect
-    if (typeof window !== 'undefined') {
-      if (resolvedTheme === 'dark') {
-        document.documentElement.classList.remove('dark');
-      } else {
-        document.documentElement.classList.add('dark');
-      }
-    }
-  }, [resolvedTheme, setTheme]);
+  const isDark = mounted && resolvedTheme === "dark"
 
   return (
     <Button
-      variant="outline"
+      type="button"
+      variant="ghost"
       size="icon"
-      aria-label="Toggle theme"
-      onClick={handleToggle}
-      className="fixed top-4 right-4 z-50 rounded-full shadow-md transition-colors"
+      aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+      title={isDark ? "Light theme" : "Dark theme"}
+      onClick={() => setTheme(isDark ? "light" : "dark")}
+      className={cn("size-9 text-muted-foreground hover:text-foreground", className)}
     >
-      {resolvedTheme === 'dark' ? <Sun className="size-5" /> : <Moon className="size-5" />}
+      {/* Render a stable icon until mounted to avoid a hydration mismatch */}
+      {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
     </Button>
-  );
+  )
 }

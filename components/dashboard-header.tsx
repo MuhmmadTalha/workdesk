@@ -1,86 +1,66 @@
 "use client"
 
+import { useState } from "react"
+import { KeyRound, StickyNote } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { SidebarTrigger } from "@/components/ui/sidebar"
-import { LogOut, Moon, Sun, StickyNote } from 'lucide-react'
-import { useTheme } from "next-themes"
-import { useEffect, useState } from "react"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { LiveTime } from "@/components/live-time"
 import { AvailabilityButton } from "@/components/availability-button"
+import { ChangePasswordDialog } from "@/components/change-password-dialog"
+import { NotificationBell } from "@/components/notification-bell"
+import { APP_NAME } from "@/lib/brand"
+import type { User } from "@/contexts/auth-context"
 
 interface DashboardHeaderProps {
-  user: any
-  onLogout: () => void
+  user: User
+  title: string
   showNotes: boolean
   setShowNotes: (show: boolean) => void
+  onNavigate?: (tab: string) => void
 }
 
-export function DashboardHeader({ user, onLogout, showNotes, setShowNotes }: DashboardHeaderProps) {
-  const { theme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  if (!mounted) {
-    return null
-  }
+export function DashboardHeader({ user, title, showNotes, setShowNotes, onNavigate }: DashboardHeaderProps) {
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false)
 
   return (
-    <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-14 items-center justify-between px-4">
-        <div className="flex items-center gap-4">
-          <SidebarTrigger />
-          <div className="flex items-center gap-3">
-            <h1 className="font-semibold hidden sm:block">
-              Welcome, <span className={user.role === 'admin' ? 'text-green-600' : 'text-blue-600'}>{user.name}</span>
-            </h1>
-            <h1 className="font-semibold sm:hidden">
-              Hi, <span className={user.role === 'admin' ? 'text-green-600' : 'text-blue-600'}>{user.name.split(' ')[0]}</span>
-            </h1>
-          </div>
-          {user.role === 'employee' && (
-            <AvailabilityButton 
-              userId={user.id} 
-              userName={user.name}
-            />
-          )}
+    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b bg-background/85 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/70 sm:px-4">
+      <SidebarTrigger className="size-8 text-muted-foreground hover:text-foreground" />
+      <div className="h-5 w-px bg-border" aria-hidden="true" />
+      <p className="min-w-0 truncate text-sm"><span className="hidden text-muted-foreground sm:inline">{APP_NAME} / </span><span className="font-medium">{title}</span></p>
+      {user.role === "employee" && (
+        <div className="ml-1 shrink-0 sm:ml-3">
+          <AvailabilityButton userId={user.id} />
         </div>
-        <div className="flex items-center gap-4">
-          <LiveTime />
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowNotes(!showNotes)}
-              className="md:hidden"
-            >
-              <StickyNote className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="border border-gray-300 hover:border-gray-400"
-            >
-              {theme === "dark" ? (
-                <Sun className="h-4 w-4" />
-              ) : (
-                <Moon className="h-4 w-4" />
-              )}
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={onLogout}
-              className="border border-gray-300 hover:border-gray-400 hover:bg-red-50"
-            >
-              <LogOut className="h-4 w-4 text-red-500" />
-            </Button>
-          </div>
-        </div>
+      )}
+
+      <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+        <LiveTime className="hidden rounded-full border bg-card px-3 py-1 md:flex" />
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Notes"
+          aria-pressed={showNotes}
+          onClick={() => setShowNotes(!showNotes)}
+          className="size-9 text-muted-foreground hover:text-foreground md:hidden"
+        >
+          <StickyNote className="size-4" />
+        </Button>
+        <NotificationBell userId={user.id} onNavigate={onNavigate} />
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Change password"
+          title="Change password"
+          onClick={() => setShowPasswordDialog(true)}
+          className="size-9 text-muted-foreground hover:text-foreground"
+        >
+          <KeyRound className="size-4" />
+        </Button>
+        <ThemeToggle />
       </div>
+
+      <ChangePasswordDialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog} />
     </header>
   )
 }

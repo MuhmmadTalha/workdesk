@@ -1,168 +1,174 @@
-"use client";
+"use client"
 
-import React, { useState } from "react";
-import { motion } from "framer-motion";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { useAuth } from "@/contexts/auth-context";
-import { useRouter } from "next/navigation";
-import { useTheme } from "next-themes";
-import RippleGrid from "@/components/ripple-grid";
-import DecryptedText from "@/components/decrypted-text";
-import { User, Eye, EyeOff, AlertCircle, Lightbulb } from "lucide-react";
+import React, { useState } from "react"
+import { useRouter } from "next/navigation"
+import { Eye, EyeOff, AlertCircle, Loader2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
+import { BrandMark } from "@/components/brand-mark"
+import { useAuth } from "@/contexts/auth-context"
+import { isSupabaseConfigured } from "@/lib/supabase"
+import { APP_NAME } from "@/lib/brand"
 
 export default function LoginForm() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [showSuccessLoading, setShowSuccessLoading] = useState(false);
-  const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const [error, setError] = useState("");
-  const { login } = useAuth();
-  const router = useRouter();
-// removed leftover merge marker
-  const { resolvedTheme } = useTheme();
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [showForgotPassword, setShowForgotPassword] = useState(false)
+  const [error, setError] = useState("")
+  const [submitted, setSubmitted] = useState(false)
+  const { login, error: authError } = useAuth()
+  const shownError = error || (submitted ? authError : "") || ""
+  const router = useRouter()
+
+  const clearError = () => {
+    setError("")
+    setSubmitted(false)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
+    e.preventDefault()
+    setIsLoading(true)
+    setError("")
+    setSubmitted(true)
     try {
-      const success = await login(email, password);
+      const success = await login(email, password)
       if (success) {
-        setIsLoading(false);
-        setShowSuccessLoading(true);
-        router.push("/dashboard");
+        router.push("/dashboard")
       } else {
-        setError("Invalid email or password. Please try again.");
-        setIsLoading(false);
+        setIsLoading(false)
       }
-    } catch (error) {
-      console.error("Login failed:", error);
-      setError("Invalid email or password. Please try again.");
-      setIsLoading(false);
+    } catch {
+      setError("Something went wrong. Please try again.")
+      setIsLoading(false)
     }
-  };
-  return (
-    <div className={`min-h-screen w-full relative overflow-hidden ${resolvedTheme === 'dark' ? 'bg-black' : 'bg-gray-100'}`}>
-      {/* Ripple Grid Background - Theme adaptive */}
-      <div className="fixed inset-0 w-full h-full z-0">
-        <RippleGrid
-          opacity={resolvedTheme === 'dark' ? 0.8 : 0.8}
-          gridColor={resolvedTheme === 'dark' ? "#8b5cf6" : "#6d28d9"}
-          rippleIntensity={0.04}
-          gridSize={8.0}
-          gridThickness={resolvedTheme === 'dark' ? 12.0 : 20.0}
-          fadeDistance={resolvedTheme === 'dark' ? 1.2 : 0.1}
-          vignetteStrength={resolvedTheme === 'dark' ? 1.5 : 0.1}
-          glowIntensity={resolvedTheme === 'dark' ? 0.08 : 0.02}
-          mouseInteraction={true}
-          mouseInteractionRadius={1.2}
-          key={resolvedTheme === 'dark' ? 'dark' : 'light'} // Force re-render on theme change
-        />
-      </div>
+  }
 
-      {/* Main content: Login Card */}
-      <div className="relative z-20 min-h-screen flex items-center justify-center">
-        <div className="w-full max-w-md p-6">
-          <Card className={`backdrop-blur-sm border-2 shadow-xl relative overflow-hidden ${resolvedTheme === 'dark' ? 'bg-black/95 border-gray-600 shadow-black/80' : 'bg-white/95 border-gray-300/40 shadow-gray-400/30'}`}>
-            <CardHeader className="space-y-4 text-center relative z-10">
-              <div className="mx-auto w-16 h-16 bg-gradient-to-br from-purple-500 to-blue-600 rounded-full flex items-center justify-center">
-                <User className="w-8 h-8 text-white" />
-              </div>
-              <div className="space-y-2">
-                <CardTitle className={`text-3xl font-bold bg-gradient-to-r bg-clip-text text-transparent ${resolvedTheme === 'dark' ? 'from-white to-purple-200' : 'from-gray-800 to-purple-600'}`}>Welcome Back</CardTitle>
-                <CardDescription className={`text-base ${resolvedTheme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`}>Sign in to access your workspace</CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6 relative z-10">
-              {error && (
-                <div className={`p-3 rounded-lg border ${resolvedTheme === 'dark' ? 'bg-red-500/10 border-red-500/20 text-red-200' : 'bg-red-50/80 border-red-200 text-red-700'}`}>
-                  <div className="flex items-center space-x-2">
-                    <AlertCircle className="w-4 h-4" />
-                    <span className="text-sm">{error}</span>
-                  </div>
-                </div>
-              )}
-              <form onSubmit={handleSubmit} className="space-y-5">
-                <div className="space-y-2">
-                  <Label htmlFor="email" className={`font-medium ${resolvedTheme === 'dark' ? 'text-white/90' : 'text-gray-700'}`}>Email Address</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="Enter your email"
-                    value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      setError("");
-                    }}
-                    required
-                    className={`h-12 transition-all duration-300 ${resolvedTheme === 'dark' ? 'bg-white/10 border-white/20 text-white placeholder:text-white/50 focus:border-purple-400 focus:ring-purple-400/20 focus:bg-white/15' : 'bg-white/60 border-gray-300/50 text-gray-800 placeholder:text-gray-500 focus:border-purple-500 focus:ring-purple-500/20 focus:bg-white/80'}`}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="password" className={`font-medium ${resolvedTheme === 'dark' ? 'text-white/90' : 'text-gray-700'}`}>Password</Label>
-                    <Button
-                      type="button"
-                      variant="link"
-                      className={`p-0 h-auto text-sm ${resolvedTheme === 'dark' ? 'text-white hover:text-gray-300' : 'text-black hover:text-gray-700'}`}
-                      onClick={() => setShowForgotPassword(!showForgotPassword)}
-                    >Forgot password?</Button>
-                  </div>
-                  <div className="relative">
-                    <Input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      placeholder="Enter your password"
-                      value={password}
-                      onChange={(e) => {
-                        setPassword(e.target.value);
-                        setError("");
-                      }}
-                      required
-                      className={`h-12 pr-12 transition-all duration-300 ${resolvedTheme === 'dark' ? 'bg-white/10 border-white/20 text-white placeholder:text-white/50 focus:border-purple-400 focus:ring-purple-400/20 focus:bg-white/15' : 'bg-white/60 border-gray-300/50 text-gray-800 placeholder:text-gray-500 focus:border-purple-500 focus:ring-purple-500/20 focus:bg-white/80'}`}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className={`absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 p-0 transition-colors ${resolvedTheme === 'dark' ? 'text-white/60 hover:text-white hover:bg-white/10' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100/50'}`}
-                      onClick={() => setShowPassword(!showPassword)}
-                    >{showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</Button>
-                  </div>
-                </div>
-                {showForgotPassword && (
-                  <div className={`p-4 rounded-lg border ${resolvedTheme === 'dark' ? 'bg-amber-500/10 border-amber-500/20 text-amber-200' : 'bg-amber-50/80 border-amber-200 text-amber-700'}`}>
-                    <div className="flex items-start space-x-3">
-                      <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
-                      <div className="text-sm">
-                        <p className="font-medium mb-1">Password Recovery</p>
-                        <p>Please contact your system administrator or development team for password reset assistance.</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <Button
-                  type="submit"
-                  disabled={isLoading}
-                  className={`w-full h-12 font-semibold rounded-lg transition-all duration-300 ${resolvedTheme === 'dark' ? 'bg-white text-black hover:bg-gray-100' : 'bg-black text-white hover:bg-gray-800'} disabled:opacity-50 disabled:cursor-not-allowed`}
-                >{isLoading ? (
-                  <div className="flex items-center space-x-2">
-                    <div className={`w-4 h-4 border-2 rounded-full animate-spin ${resolvedTheme === 'dark' ? 'border-black/30 border-t-black' : 'border-white/30 border-t-white'}`} />
-                    <span>Signing in...</span>
-                  </div>
-                ) : (
-                  "Login"
-                )}</Button>
-              </form>
-            </CardContent>
-          </Card>
+  return (
+    <div className="relative grid min-h-svh place-items-center overflow-hidden bg-muted/40 px-4 py-12 dark:bg-background">
+      {/* Faint dot grid that fades out toward the edges — static, no animation */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 opacity-[0.35] dark:opacity-[0.12]"
+        style={{
+          backgroundImage: "radial-gradient(circle at 1px 1px, var(--border) 1px, transparent 0)",
+          backgroundSize: "22px 22px",
+          maskImage: "radial-gradient(ellipse 60% 55% at 50% 45%, black 30%, transparent 75%)",
+          WebkitMaskImage: "radial-gradient(ellipse 60% 55% at 50% 45%, black 30%, transparent 75%)",
+        }}
+      />
+      {/* In dark mode the dots need a lighter colour than --border to show */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 hidden opacity-[0.08] dark:block"
+        style={{
+          backgroundImage: "radial-gradient(circle at 1px 1px, white 1px, transparent 0)",
+          backgroundSize: "22px 22px",
+          maskImage: "radial-gradient(ellipse 60% 55% at 50% 45%, black 30%, transparent 75%)",
+          WebkitMaskImage: "radial-gradient(ellipse 60% 55% at 50% 45%, black 30%, transparent 75%)",
+        }}
+      />
+
+      <ThemeToggle className="absolute right-4 top-4" />
+
+      <div className="relative w-full max-w-sm">
+        <div className="mb-7 flex flex-col items-center text-center">
+          <BrandMark showWordmark={false} className="[&_svg]:size-10" />
+          <h1 className="mt-5 text-2xl font-semibold tracking-tight">Sign in to {APP_NAME}</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            Use the email and password from your administrator.
+          </p>
         </div>
+
+        <div className="rounded-xl border bg-card p-6 shadow-sm sm:p-7">
+          {!isSupabaseConfigured && (
+            <div role="alert" className="mb-5 rounded-lg border border-warning/40 bg-warning-soft px-3.5 py-3 text-sm text-warning-soft-foreground">
+              The app isn&apos;t connected to a database. Set the Supabase keys in <code className="font-mono text-xs">.env.local</code> and restart.
+            </div>
+          )}
+
+          {shownError && (
+            <div role="alert" className="mb-5 flex items-start gap-2.5 rounded-lg border border-destructive/25 bg-danger-soft px-3.5 py-3 text-sm text-danger-soft-foreground">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span>{shownError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="email">Work email</Label>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="email"
+                autoFocus
+                placeholder="name@company.com"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); clearError() }}
+                required
+                className="h-11"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">Password</Label>
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPassword(v => !v)}
+                  aria-expanded={showForgotPassword}
+                  className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                >
+                  Forgot password?
+                </button>
+              </div>
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); clearError() }}
+                  required
+                  className="h-11 pr-11"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(v => !v)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  className="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-r-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
+              {showForgotPassword && (
+                <p className="rounded-md bg-muted px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+                  Ask your administrator to set a new temporary password. Once you&apos;re in, you can change it
+                  from the key icon in the top bar.
+                </p>
+              )}
+            </div>
+
+            <Button type="submit" disabled={isLoading} className="h-11 w-full text-sm font-medium">
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  Signing in…
+                </>
+              ) : (
+                "Sign in"
+              )}
+            </Button>
+          </form>
+        </div>
+
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          Accounts are created by your administrator.
+        </p>
       </div>
     </div>
-  );
+  )
 }
-// removed duplicate code block after main component

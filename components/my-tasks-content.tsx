@@ -1,22 +1,28 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { supabase } from "@/lib/supabase"
+import { useState, useEffect, useCallback } from "react"
+import { supabase, type AssignmentStatus } from "@/lib/supabase"
+import { useLiveRefresh } from "@/lib/use-live-refresh"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Badge } from "@/components/ui/badge"
-import { MessageCircle, CheckCircle, Loader2 } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { CheckCircle, ListTodo, Percent, CalendarDays } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
+import { EmptyState, Pill, priorityTone, statusTone } from "@/components/feedback-states"
+import { formatDate } from "@/lib/date-utils"
+import { cn } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
+import { StatCard } from "@/components/stat-card"
 
-interface Task {
+interface MyTask {
   id: string
   title: string
-  description: string
-  deadline: string
-  status: "Pending" | "In Progress" | "Completed"
-  priority: "Low" | "Medium" | "High"
+  description: string | null
+  deadline: string | null
+  priority: string
+  taskStatus: string          // overall status set by the admin (e.g. Cancelled)
+  status: AssignmentStatus    // this employee's own progress
 }
 
 interface MyTasksContentProps {
@@ -24,274 +30,186 @@ interface MyTasksContentProps {
 }
 
 export function MyTasksContent({ userId }: MyTasksContentProps) {
-  const [tasks, setTasks] = useState<Task[]>([])
+  const [tasks, setTasks] = useState<MyTask[]>([])
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
 
-  useEffect(() => {
-    fetchTasks()
-  }, [userId])
+  const fetchTasks = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
+    const { data, error } = await supabase
+      .from('task_assignments')
+      .select('status, assigned_at, tasks!inner(id, title, description, deadline, priority, status)')
+      .eq('employee_id', userId)
+      .order('assigned_at', { ascending: false })
 
-  const fetchTasks = async () => {
-    try {
-      setLoading(true)
-      console.log('🔍 Fetching tasks for user:', userId)
-      
-      if (!userId) {
-        console.warn('⚠️ No userId provided')
-        setTasks([])
-        setLoading(false)
-        return
-      }
-      
-      // First try to get tasks with assignment status
-      const { data: assignmentData, error: assignmentError } = await supabase
-        .from('task_assignments')
-        .select(`
-          status,
-          assigned_at,
-          completed_at,
-          tasks!inner (
-            id,
-            title,
-            description,
-            deadline,
-            priority,
-            created_at
-          )
-        `)
-        .eq('employee_id', userId)
-        .order('assigned_at', { ascending: false })
-
-      if (assignmentError) {
-        console.warn('⚠️ Task assignments not available, falling back to tasks table:', assignmentError)
-        // Fallback to original method
-        const { data, error } = await supabase
-          .from('tasks')
-          .select('*')
-          .contains('assigned_to', [userId])
-          .order('created_at', { ascending: false })
-
-        if (error) {
-          console.error('❌ Tasks error:', error)
-          
-          // Check if it's a database table issue
-          if (error.message?.includes('relation "tasks" does not exist')) {
-            toast({
-              title: "Setup Required",
-              description: "Task management requires database setup. Please contact your administrator.",
-              variant: "destructive"
-            })
-          } else {
-            throw error
-          }
-          setTasks([])
-          return
-        }
-        
-        console.log('✅ Tasks loaded (fallback method):', data?.length || 0)
-        setTasks(data || [])
-      } else {
-        // Transform assignment data to task format
-        const transformedTasks = assignmentData?.map((assignment: any) => ({
-          id: assignment.tasks.id,
-          title: assignment.tasks.title,
-          description: assignment.tasks.description,
-          deadline: assignment.tasks.deadline,
-          priority: assignment.tasks.priority,
-          status: assignment.status as "Pending" | "In Progress" | "Completed",
-          created_at: assignment.tasks.created_at
-        })) || []
-        
-        console.log('✅ Tasks loaded (assignment method):', transformedTasks.length)
-        setTasks(transformedTasks)
-      }
-    } catch (error) {
-      console.error('❌ Error fetching tasks:', error)
-      toast({
-        title: "Error",
-        description: "Failed to load tasks. Please try again.",
-        variant: "destructive",
-      })
+    if (error) {
+      toast({ title: "Error", description: "Failed to load tasks. Please try again.", variant: "destructive" })
       setTasks([])
-    } finally {
-      setLoading(false)
+    } else {
+      type Row = { status: AssignmentStatus; tasks: { id: string; title: string; description: string | null; deadline: string | null; priority: string; status: string } }
+      setTasks(((data ?? []) as unknown as Row[]).map(row => ({
+        id: row.tasks.id,
+        title: row.tasks.title,
+        description: row.tasks.description,
+        deadline: row.tasks.deadline,
+        priority: row.tasks.priority,
+        taskStatus: row.tasks.status,
+        status: row.status,
+      })))
     }
-  }
+    setLoading(false)
+  }, [userId, toast])
 
-  const handleTaskComplete = async (taskId: string, currentStatus: string) => {
-    try {
-      const newStatus = currentStatus === "Completed" ? "Pending" : "Completed"
-      
-      // Update the task assignment status, not the main task
-      const { error: assignmentError } = await supabase
-        .from('task_assignments')
-        .update({ 
-          status: newStatus,
-          completed_at: newStatus === "Completed" ? new Date().toISOString() : null
-        })
-        .eq('task_id', taskId)
-        .eq('employee_id', userId)
+  useEffect(() => {
+    if (userId) fetchTasks()
+  }, [userId, fetchTasks])
 
-      if (assignmentError) {
-        console.error('Assignment update error:', assignmentError)
-        // Fallback to updating the main task if assignment table doesn't exist
-        const { error: taskError } = await supabase
-          .from('tasks')
-          .update({ status: newStatus })
-          .eq('id', taskId)
+  useLiveRefresh(["task_assignments", "tasks"], () => fetchTasks(true), !!userId)
 
-        if (taskError) throw taskError
-      }
-
-      setTasks(tasks.map(task => 
-        task.id === taskId 
-          ? { ...task, status: newStatus as "Pending" | "In Progress" | "Completed" }
-          : task
-      ))
-
-      toast({
-        title: "Success",
-        description: `Task marked as ${newStatus.toLowerCase()}`,
+  const setStatus = async (taskId: string, newStatus: AssignmentStatus) => {
+    // Only this employee's assignment row changes, so co-assignees keep their own status.
+    const { error } = await supabase
+      .from('task_assignments')
+      .update({
+        status: newStatus,
+        completed_at: newStatus === "Completed" ? new Date().toISOString() : null,
       })
-    } catch (error) {
-      console.error('Error updating task:', error)
-      toast({
-        title: "Error",
-        description: "Failed to update task status. Please try again.",
-        variant: "destructive",
-      })
+      .eq('task_id', taskId)
+      .eq('employee_id', userId)
+
+    if (error) {
+      toast({ title: "Error", description: "Failed to update task status. Please try again.", variant: "destructive" })
+      return
     }
+
+    setTasks(prev => prev.map(task => task.id === taskId ? { ...task, status: newStatus } : task))
+    toast({ title: "Success", description: `Task marked as ${newStatus.toLowerCase()}` })
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Completed": return "default"
-      case "In Progress": return "secondary"
-      case "Pending": return "outline"
-      default: return "outline"
-    }
-  }
+  const statusSelect = (task: MyTask) =>
+    task.taskStatus === "Cancelled" ? (
+      <Pill className={statusTone.Cancelled}>Cancelled</Pill>
+    ) : (
+      <Select value={task.status} onValueChange={(v) => setStatus(task.id, v as AssignmentStatus)}>
+        <SelectTrigger className="h-9 w-[140px]" aria-label={`Status for ${task.title}`}>
+          <SelectValue>
+            <Pill className={statusTone[task.status] ?? statusTone.Pending}>{task.status}</Pill>
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="Pending">Pending</SelectItem>
+          <SelectItem value="In Progress">In Progress</SelectItem>
+          <SelectItem value="Completed">Completed</SelectItem>
+        </SelectContent>
+      </Select>
+    )
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case "High": return "destructive"
-      case "Medium": return "secondary"
-      case "Low": return "outline"
-      default: return "outline"
-    }
-  }
+  const doneCheckbox = (task: MyTask) => (
+    <Checkbox
+      className="size-5"
+      aria-label={`Mark "${task.title}" as ${task.status === "Completed" ? "not done" : "done"}`}
+      disabled={task.taskStatus === "Cancelled"}
+      checked={task.status === "Completed"}
+      onCheckedChange={() => setStatus(task.id, task.status === "Completed" ? "Pending" : "Completed")}
+    />
+  )
 
-  const completedTasks = tasks.filter(task => task.status === "Completed").length
-  const totalTasks = tasks.length
+  const activeTasks = tasks.filter(t => t.taskStatus !== "Cancelled")
+  const completedTasks = activeTasks.filter(task => task.status === "Completed").length
+  const totalTasks = activeTasks.length
+  const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">My Tasks</h2>
-        <p className="text-muted-foreground">
-          View and manage your assigned tasks
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">My Tasks</h1>
+        <p className="mt-1 text-sm text-muted-foreground">View and manage your assigned tasks</p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Tasks</CardTitle>
-            <CheckCircle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalTasks}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Completed</CardTitle>
-            <CheckCircle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{completedTasks}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Completion Rate</CardTitle>
-            <CheckCircle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{Math.round((completedTasks / totalTasks) * 100)}%</div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
+        <StatCard label="Assigned" value={totalTasks} icon={ListTodo} tone="info" />
+        <StatCard label="Completed" value={completedTasks} icon={CheckCircle} tone="success" />
+        <StatCard label="Completion" value={`${completionRate}%`} icon={Percent} tone="brand" empty={totalTasks === 0} />
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Task List</CardTitle>
-          <CardDescription>
-            Your assigned tasks and their current status
-          </CardDescription>
+          <CardDescription>Your assigned tasks and your progress on each</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin" />
-              <span className="ml-2">Loading tasks...</span>
+            <div className="space-y-3" aria-busy="true">
+              <span className="sr-only">Loading tasks…</span>
+              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
             </div>
           ) : tasks.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              No tasks assigned to you yet.
-            </div>
+            <EmptyState icon={ListTodo} title="No tasks yet" description="Tasks your admin assigns to you will show up here." />
           ) : (
-          <div className="w-full overflow-x-auto">
-            <Table className="min-w-[600px] w-full">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12">Done</TableHead>
-                  <TableHead>Task</TableHead>
-                  <TableHead>Deadline</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tasks.map((task) => (
-                  <TableRow key={task.id}>
-                    <TableCell>
-                      <Checkbox
-                        checked={task.status === "Completed"}
-                        onCheckedChange={() => handleTaskComplete(task.id, task.status)}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <div className={`font-medium ${task.status === "Completed" ? "line-through text-muted-foreground" : ""}`}>
+            <>
+            {/* Mobile: task cards */}
+            <ul className="space-y-3 md:hidden">
+              {tasks.map((task) => {
+                const cancelled = task.taskStatus === "Cancelled"
+                return (
+                  <li key={task.id} className={cn("rounded-lg border p-3", cancelled && "opacity-60")}>
+                    <div className="flex items-start gap-3">
+                      <div className="pt-0.5">{doneCheckbox(task)}</div>
+                      <div className="min-w-0 flex-1">
+                        <p className={cn("font-medium", (task.status === "Completed" || cancelled) && "line-through text-muted-foreground")}>
                           {task.title}
+                        </p>
+                        {task.description && <p className="mt-0.5 text-sm text-muted-foreground">{task.description}</p>}
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <Pill className={priorityTone[task.priority] ?? priorityTone.Low}>{task.priority}</Pill>
+                          {task.deadline && (
+                            <Pill className="bg-muted text-foreground border-border">
+                              <CalendarDays aria-hidden="true" />{formatDate(task.deadline)}
+                            </Pill>
+                          )}
                         </div>
-                        <div className="text-sm text-muted-foreground">{task.description}</div>
+                        <div className="mt-3">{statusSelect(task)}</div>
                       </div>
-                    </TableCell>
-                    <TableCell>{task.deadline}</TableCell>
-                    <TableCell>
-                      <Badge variant={getPriorityColor(task.priority)}>
-                        {task.priority}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={getStatusColor(task.status)}>
-                        {task.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon">
-                        <MessageCircle className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+            <div className="hidden w-full overflow-x-auto md:block">
+              <Table className="w-full">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">Done</TableHead>
+                    <TableHead>Task</TableHead>
+                    <TableHead>Deadline</TableHead>
+                    <TableHead>Priority</TableHead>
+                    <TableHead>Status</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {tasks.map((task) => {
+                    const cancelled = task.taskStatus === "Cancelled"
+                    return (
+                      <TableRow key={task.id} className={cancelled ? "opacity-60" : ""}>
+                        <TableCell>{doneCheckbox(task)}</TableCell>
+                        <TableCell>
+                          <div className={`font-medium ${task.status === "Completed" || cancelled ? "line-through text-muted-foreground" : ""}`}>
+                            {task.title}
+                          </div>
+                          {task.description && <div className="text-sm text-muted-foreground">{task.description}</div>}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap tabular-nums">{task.deadline ? formatDate(task.deadline) : "—"}</TableCell>
+                        <TableCell>
+                          <Pill className={priorityTone[task.priority] ?? priorityTone.Low}>{task.priority}</Pill>
+                        </TableCell>
+                        <TableCell>{statusSelect(task)}</TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+            </>
           )}
         </CardContent>
       </Card>

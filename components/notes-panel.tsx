@@ -4,7 +4,9 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { X, Plus, Trash2, Edit, Save, Loader2 } from 'lucide-react'
+import { X, Plus, Trash2, Edit, Save, Loader2, StickyNote } from 'lucide-react'
+import { Skeleton } from "@/components/ui/skeleton"
+import { EmptyState } from "@/components/feedback-states"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from '@/lib/supabase'
 
@@ -19,10 +21,9 @@ interface NotesPanelProps {
   isOpen: boolean
   onClose: () => void
   userId: string
-  userRole: string
 }
 
-export function NotesPanel({ isOpen, onClose, userId, userRole }: NotesPanelProps) {
+export function NotesPanel({ isOpen, onClose, userId }: NotesPanelProps) {
   const [notes, setNotes] = useState<Note[]>([])
   const [newNote, setNewNote] = useState("")
   const [editingNote, setEditingNote] = useState<string | null>(null)
@@ -47,27 +48,16 @@ export function NotesPanel({ isOpen, onClose, userId, userRole }: NotesPanelProp
         .order('created_at', { ascending: false })
 
       if (error) {
-        console.error('Error loading notes:', error)
-        // If table doesn't exist, show a more user-friendly message
-        if (error.message?.includes('relation "notes" does not exist')) {
-          toast({
-            title: "Setup Required",
-            description: "Notes feature requires database setup. Please contact your administrator.",
-            variant: "destructive"
-          })
-        } else {
-          toast({
-            title: "Error",
-            description: "Failed to load notes. Please try again.",
-            variant: "destructive"
-          })
-        }
+        toast({
+          title: "Error",
+          description: "Failed to load notes. Please try again.",
+          variant: "destructive"
+        })
         setNotes([])
         return
       }
       setNotes(data || [])
-    } catch (error) {
-      console.error('Error loading notes:', error)
+    } catch {
       toast({
         title: "Error",
         description: "Failed to load notes. Please try again.",
@@ -84,17 +74,8 @@ export function NotesPanel({ isOpen, onClose, userId, userRole }: NotesPanelProp
 
     try {
       setSaving(true)
-      console.log('🔍 Adding note for user:', userId)
-      
-      // First check if the notes table exists and if we can insert
-      const { data: tableCheck } = await supabase
-        .from('notes')
-        .select('id')
-        .limit(1)
-      
-      // Try to add the note with proper error handling
       const { data, error } = await supabase
-        .from('notes')
+        .from("notes")
         .insert({
           employee_id: userId,
           content: newNote.trim()
@@ -102,23 +83,8 @@ export function NotesPanel({ isOpen, onClose, userId, userRole }: NotesPanelProp
         .select()
         .single()
 
-      if (error) {
-        console.error('❌ Database error:', error)
-        
-        // If RLS error, provide helpful message
-        if (error.message.includes('row-level security policy')) {
-          toast({
-            title: "Authentication Issue",
-            description: "Notes feature requires proper database authentication setup. Contact administrator.",
-            variant: "destructive"
-          })
-          return
-        }
-        
-        throw error
-      }
+      if (error) throw error
 
-      console.log('✅ Note added successfully:', data)
       setNotes([data, ...notes])
       setNewNote("")
       toast({
@@ -126,23 +92,12 @@ export function NotesPanel({ isOpen, onClose, userId, userRole }: NotesPanelProp
         description: "Note added successfully"
       })
     } catch (error) {
-      console.error('❌ Error adding note:', error)
-      console.error('Full error details:', JSON.stringify(error, null, 2))
-      
-      // Check if it's a database table issue
-      if (error instanceof Error && error.message.includes('relation "notes" does not exist')) {
-        toast({
-          title: "Database Setup Required",
-          description: "Please run the database setup script first. Check the SIMPLIFIED-DATABASE-SETUP.sql file.",
-          variant: "destructive"
-        })
-      } else {
-        toast({
-          title: "Error",
-          description: `Failed to add note: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          variant: "destructive"
-        })
-      }
+      const message = error && typeof error === "object" && "message" in error ? String(error.message) : "Unknown error"
+      toast({
+        title: "Error",
+        description: `Failed to add note: ${message}`,
+        variant: "destructive"
+      })
     } finally {
       setSaving(false)
     }
@@ -157,11 +112,12 @@ export function NotesPanel({ isOpen, onClose, userId, userRole }: NotesPanelProp
         .from('notes')
         .update({ content: editText.trim() })
         .eq('id', noteId)
+        .eq('employee_id', userId)
 
       if (error) throw error
 
-      setNotes(notes.map(note => 
-        note.id === noteId 
+      setNotes(notes.map(note =>
+        note.id === noteId
           ? { ...note, content: editText.trim(), updated_at: new Date().toISOString() }
           : note
       ))
@@ -190,6 +146,7 @@ export function NotesPanel({ isOpen, onClose, userId, userRole }: NotesPanelProp
         .from('notes')
         .delete()
         .eq('id', noteId)
+        .eq('employee_id', userId)
 
       if (error) throw error
 
@@ -223,20 +180,21 @@ export function NotesPanel({ isOpen, onClose, userId, userRole }: NotesPanelProp
   if (!isOpen) return null
 
   return (
-    <div className="h-full flex flex-col border-l bg-background">
-      <div className="flex items-center justify-between p-4 border-b">
-        <h3 className="text-lg font-semibold">My Notes</h3>
+    <div className="flex h-full flex-col bg-background">
+      <div className="flex items-center justify-between border-b py-2 pl-4 pr-2">
+        <h3 className="text-sm font-semibold">My notes</h3>
         <Button
           variant="ghost"
-          size="sm"
+          size="icon"
           onClick={onClose}
-          className="h-8 w-8 p-0"
+          aria-label="Close notes"
+          title="Close (Esc)"
         >
-          <X className="h-4 w-4" />
+          <X className="h-4 w-4" aria-hidden="true" />
         </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 space-y-3 overflow-y-auto p-3">
         {/* Add New Note */}
         <Card>
           <CardHeader className="pb-3">
@@ -244,6 +202,7 @@ export function NotesPanel({ isOpen, onClose, userId, userRole }: NotesPanelProp
           </CardHeader>
           <CardContent className="space-y-3">
             <Textarea
+              aria-label="New note"
               placeholder="Write your note here..."
               value={newNote}
               onChange={(e) => setNewNote(e.target.value)}
@@ -268,19 +227,12 @@ export function NotesPanel({ isOpen, onClose, userId, userRole }: NotesPanelProp
 
         {/* Notes List */}
         {loading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin mr-2" />
-            Loading notes...
+          <div className="space-y-3" aria-busy="true">
+            <span className="sr-only">Loading notes…</span>
+            {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full rounded-xl" />)}
           </div>
         ) : notes.length === 0 ? (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-center text-muted-foreground">
-                <p className="text-sm">No notes yet.</p>
-                <p className="text-xs mt-1">Add your first note above!</p>
-              </div>
-            </CardContent>
-          </Card>
+          <EmptyState icon={StickyNote} title="No notes yet" description="Jot down anything you want to remember." className="rounded-xl border border-dashed" />
         ) : (
           notes.map((note) => (
             <Card key={note.id}>
@@ -288,6 +240,8 @@ export function NotesPanel({ isOpen, onClose, userId, userRole }: NotesPanelProp
                 {editingNote === note.id ? (
                   <div className="space-y-3">
                     <Textarea
+                      aria-label="Edit note"
+                      autoFocus
                       value={editText}
                       onChange={(e) => setEditText(e.target.value)}
                       rows={3}
@@ -333,19 +287,23 @@ export function NotesPanel({ isOpen, onClose, userId, userRole }: NotesPanelProp
                           onClick={() => startEditing(note)}
                           disabled={saving}
                           variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0"
+                          size="icon"
+                          className="size-9"
+                          aria-label="Edit note"
+                          title="Edit"
                         >
-                          <Edit className="h-3 w-3" />
+                          <Edit className="h-4 w-4" aria-hidden="true" />
                         </Button>
                         <Button
                           onClick={() => deleteNote(note.id)}
                           disabled={saving}
                           variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                          size="icon"
+                          className="size-9 text-muted-foreground hover:bg-danger-soft hover:text-destructive"
+                          aria-label="Delete note"
+                          title="Delete"
                         >
-                          <Trash2 className="h-3 w-3" />
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
                         </Button>
                       </div>
                     </div>

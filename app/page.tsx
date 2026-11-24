@@ -2,17 +2,14 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { LoadingScreen } from '@/components/loading-screen'
 
 export default function HomePage() {
   const router = useRouter()
-  
+
   useEffect(() => {
     router.replace('/login')
   }, [router])
 
-  return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div>Redirecting to login...</div>
-    </div>
-  )
+  return <LoadingScreen label="Redirecting to sign in…" />
 }

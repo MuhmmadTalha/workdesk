@@ -6,17 +6,22 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { supabase } from '@/lib/supabase'
-import { formatDate } from '@/lib/date-utils'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { supabase, ATTENDANCE_STATUSES, attendanceLabel, type AttendanceStatus } from '@/lib/supabase'
+import { useLiveRefresh } from "@/lib/use-live-refresh"
+import { localDateString } from '@/lib/utils'
 import { useToast } from "@/hooks/use-toast"
-import { Plus } from 'lucide-react'
+import { Plus, Users, ClipboardCheck, UserCheck, Timer, CalendarX2 } from 'lucide-react'
+import { StatCard } from '@/components/stat-card'
+import { AttendanceBadge, EmptyState, ErrorState, SectionSkeleton } from '@/components/feedback-states'
+import { formatDate } from '@/lib/date-utils'
+import { InitialsAvatar } from '@/components/initials-avatar'
 
 interface Employee {
   id: string
   name: string
   email: string
-  role: string
+  role?: string
 }
 
 interface AttendanceRecord {
@@ -25,11 +30,20 @@ interface AttendanceRecord {
   date: string
   status: string
   hours_worked: number
-  employees: {
-    name: string
-    email: string
-  } | null
+  check_in_time: string | null
+  check_out_time: string | null
+  notes: string | null
+  employee: Employee | undefined
 }
+
+
+const emptyRecord = () => ({
+  employee_id: '',
+  date: localDateString(),
+  status: '' as AttendanceStatus | '',
+  hours_worked: '',
+  notes: '',
+})
 
 export default function SimpleAttendanceContent() {
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -37,207 +51,44 @@ export default function SimpleAttendanceContent() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const { toast } = useToast()
-  
-  // Form state
-  const [selectedEmployee, setSelectedEmployee] = useState<string>('')
-  const [date, setDate] = useState<string>('')
-  const [status, setStatus] = useState<string>('')
-  const [hoursWorked, setHoursWorked] = useState<string>('')
   const [submitting, setSubmitting] = useState(false)
-
-  // New modal form state
-  const [newRecord, setNewRecord] = useState({
-    employee_id: '',
-    date: new Date().toISOString().split('T')[0],
-    status: '',
-    notes: ''
-  })
-
-  // Set default date on client side only
-  useEffect(() => {
-    if (!date) {
-      setDate(new Date().toISOString().split('T')[0])
-    }
-  }, [])
+  const [newRecord, setNewRecord] = useState(emptyRecord)
+  const { toast } = useToast()
 
   const loadData = async () => {
     try {
-      console.log('Loading employees and attendance records...')
-      
-      // Load employees (exclude admin from attendance marking)
+      // Everyone (admins can check in too) so names resolve; only employees are offered in the form.
       const { data: employeesData, error: employeesError } = await supabase
         .from('employees')
         .select('id, name, email, role')
-        .eq('role', 'employee')  // Only employees, not admins
         .order('name')
 
       if (employeesError) {
-        console.error('Error loading employees:', employeesError)
         setError(`Error loading employees: ${employeesError.message}`)
         return
       }
+      setEmployees((employeesData || []).filter(e => e.role === 'employee'))
 
-      console.log('Employees loaded:', employeesData)
-      setEmployees(employeesData || [])
-
-      // Load attendance records - simple query first
       const { data: attendanceData, error: attendanceError } = await supabase
         .from('attendance')
-        .select('id, employee_id, date, status, hours_worked')
+        .select('id, employee_id, date, status, hours_worked, check_in_time, check_out_time, notes')
         .order('date', { ascending: false })
         .limit(100)
 
       if (attendanceError) {
-        console.error('Error loading attendance:', attendanceError)
         setError(`Error loading attendance: ${attendanceError.message}`)
         return
       }
 
-      console.log('Attendance records loaded:', attendanceData)
-      
-      // Create employee map for names
-      const employeeMap = new Map()
-      employeesData?.forEach(emp => {
-        employeeMap.set(emp.id, { name: emp.name, email: emp.email })
-      })
-      
-      // Combine attendance data with employee names
-      const attendanceWithEmployees = (attendanceData || []).map(record => ({
+      const employeeMap = new Map((employeesData || []).map(emp => [emp.id, emp]))
+      setAttendance((attendanceData || []).map(record => ({
         ...record,
-        employees: employeeMap.get(record.employee_id) || { name: 'Unknown', email: '' }
-      }))
-      
-      setAttendance(attendanceWithEmployees)
+        hours_worked: Number(record.hours_worked),
+        employee: employeeMap.get(record.employee_id),
+      })))
       setError(null)
-
-    } catch (err) {
-      console.error('Unexpected error:', err)
-      setError(`Unexpected error: ${err}`)
     } finally {
       setLoading(false)
-    }
-  }
-
-  const addAttendance = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSubmitting(true)
-
-    try {
-      const { data, error } = await supabase
-        .from('attendance')
-        .insert([{
-          employee_id: newRecord.employee_id,
-          date: newRecord.date,
-          status: newRecord.status.toLowerCase(),
-          hours_worked: newRecord.status === 'Present' ? 8 : 0, // Default hours
-          notes: newRecord.notes || null
-        }])
-        .select()
-
-      if (error) {
-        console.error('Error creating attendance record:', error)
-        toast({
-          title: "Error",
-          description: `Error creating attendance record: ${error.message}`,
-          variant: "destructive"
-        })
-        return
-      }
-
-      console.log('Attendance record created successfully:', data)
-      toast({
-        title: "Success",
-        description: "Attendance record created successfully"
-      })
-      
-      // Reset form and close dialog
-      setNewRecord({
-        employee_id: '',
-        date: new Date().toISOString().split('T')[0],
-        status: '',
-        notes: ''
-      })
-      setIsDialogOpen(false)
-      
-      // Reload data
-      await loadData()
-
-    } catch (err) {
-      console.error('Unexpected error creating attendance record:', err)
-      toast({
-        title: "Error",
-        description: `Unexpected error: ${err}`,
-        variant: "destructive"
-      })
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  const addAttendanceRecord = async () => {
-    if (!supabase) {
-      setError('Supabase client not available')
-      return
-    }
-
-    if (!selectedEmployee || !date || !status) {
-      setError('Please fill in all required fields')
-      return
-    }
-
-    const hours = parseFloat(hoursWorked) || 0
-    if (hours < 0 || hours > 24) {
-      setError('Hours worked must be between 0 and 24')
-      return
-    }
-
-    setSubmitting(true)
-    setError(null)
-
-    try {
-      console.log('Creating attendance record...', {
-        employee_id: selectedEmployee,
-        date,
-        status,
-        hours_worked: hours
-      })
-
-      const { data, error } = await supabase
-        .from('attendance')
-        .insert([
-          {
-            employee_id: selectedEmployee,
-            date,
-            status,
-            hours_worked: hours
-          }
-        ])
-        .select()
-
-      if (error) {
-        console.error('Error creating attendance record:', error)
-        setError(`Error creating attendance record: ${error.message}`)
-        return
-      }
-
-      console.log('Attendance record created successfully:', data)
-      
-      // Reset form and close dialog
-      setSelectedEmployee('')
-      setDate(new Date().toISOString().split('T')[0])
-      setStatus('')
-      setHoursWorked('')
-      setIsDialogOpen(false)
-      
-      // Reload data
-      await loadData()
-
-    } catch (err) {
-      console.error('Unexpected error creating attendance record:', err)
-      setError(`Unexpected error: ${err}`)
-    } finally {
-      setSubmitting(false)
     }
   }
 
@@ -245,107 +96,121 @@ export default function SimpleAttendanceContent() {
     loadData()
   }, [])
 
+  useLiveRefresh(["attendance", "employees"], () => loadData())
+
+  const saveAttendance = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newRecord.employee_id || !newRecord.status) {
+      toast({ title: "Missing fields", description: "Choose an employee and a status.", variant: "destructive" })
+      return
+    }
+
+    const defaultHours = ATTENDANCE_STATUSES.find(s => s.value === newRecord.status)?.defaultHours ?? 0
+    const hours = newRecord.hours_worked === '' ? defaultHours : Number(newRecord.hours_worked)
+    if (Number.isNaN(hours) || hours < 0 || hours > 24) {
+      toast({ title: "Invalid hours", description: "Hours worked must be between 0 and 24.", variant: "destructive" })
+      return
+    }
+
+    setSubmitting(true)
+    // Upsert: marking the same employee/day again updates the existing record.
+    const { error } = await supabase
+      .from('attendance')
+      .upsert({
+        employee_id: newRecord.employee_id,
+        date: newRecord.date,
+        status: newRecord.status,
+        hours_worked: hours,
+        notes: newRecord.notes.trim() || null,
+      }, { onConflict: 'employee_id,date' })
+    setSubmitting(false)
+
+    if (error) {
+      toast({ title: "Error", description: `Could not save attendance: ${error.message}`, variant: "destructive" })
+      return
+    }
+
+    toast({ title: "Saved", description: "Attendance record saved" })
+    setNewRecord(emptyRecord())
+    setIsDialogOpen(false)
+    await loadData()
+  }
+
   if (loading) {
     return (
-      <div className="space-y-6">
-        <h2 className="text-2xl font-bold">Attendance Management</h2>
-        <p>Loading attendance data...</p>
-      </div>
+      <SectionSkeleton stats={4} rows={5} label="Loading attendance" />
     )
   }
+
+  const avgHours = attendance.length > 0
+    ? (attendance.reduce((sum, r) => sum + r.hours_worked, 0) / attendance.length).toFixed(1)
+    : '0'
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col space-y-4 md:flex-row md:justify-between md:items-center md:space-y-0">
         <div>
-          <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Attendance Management</h2>
-          <p className="text-muted-foreground text-sm md:text-base">
+          <h1 className="text-2xl font-semibold tracking-tight">Attendance</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Track and manage employee attendance records
           </p>
         </div>
         <Button onClick={() => setIsDialogOpen(true)} className="w-full md:w-auto">
-          <Plus className="mr-2 h-4 w-4" />
+          <Plus className="h-4 w-4" aria-hidden="true" />
           Mark Attendance
         </Button>
       </div>
-      
+
       {error && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="p-4">
-            <p className="text-red-800">{error}</p>
-          </CardContent>
+        <Card className="py-0">
+          <ErrorState title="Couldn't load attendance" message={error} onRetry={() => { setLoading(true); loadData() }} />
         </Card>
       )}
 
-      {/* Statistics - Moved to Top */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg md:text-xl">Statistics</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center p-3 md:p-4">
-              <div className="text-xl md:text-2xl font-bold">{employees.length}</div>
-              <p className="text-gray-600 text-sm md:text-base">Total Employees</p>
-            </div>
-            <div className="text-center p-3 md:p-4">
-              <div className="text-xl md:text-2xl font-bold">{attendance.length}</div>
-              <p className="text-gray-600 text-sm md:text-base">Total Records</p>
-            </div>
-            <div className="text-center p-3 md:p-4">
-              <div className="text-xl md:text-2xl font-bold">
-                {attendance.filter(r => r.status === 'present').length}
-              </div>
-              <p className="text-gray-600 text-sm md:text-base">Present</p>
-            </div>
-            <div className="text-center p-3 md:p-4">
-              <div className="text-xl md:text-2xl font-bold">
-                {attendance.length > 0 
-                  ? (attendance.reduce((sum, r) => sum + r.hours_worked, 0) / attendance.length).toFixed(1)
-                  : '0'
-                }
-              </div>
-              <p className="text-gray-600 text-sm md:text-base">Avg Hours</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatCard label="Employees" value={employees.length} icon={Users} tone="brand" />
+        <StatCard label="Records" value={attendance.length} icon={ClipboardCheck} tone="info" hint="Last 100 entries" />
+        <StatCard label="Present" value={attendance.filter(r => r.status === 'present').length} icon={UserCheck} tone="success" />
+        <StatCard label="Avg hours" value={avgHours} icon={Timer} tone="warning" empty={avgHours === '0.0' || avgHours === '0'} />
+      </div>
 
-      {/* Attendance Records List */}
       <Card>
         <CardHeader>
           <CardTitle>Recent Attendance Records ({attendance.length})</CardTitle>
         </CardHeader>
         <CardContent>
           {attendance.length === 0 ? (
-            <p className="text-gray-500">No attendance records found.</p>
+            <EmptyState
+              icon={CalendarX2}
+              title="No attendance records yet"
+              description="Mark attendance for an employee to start tracking."
+              action={<Button size="sm" onClick={() => setIsDialogOpen(true)}><Plus aria-hidden="true" />Mark attendance</Button>}
+            />
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {attendance.map((record) => (
-                <div key={record.id} className="border rounded-lg p-4">
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <h4 className="font-semibold">{record.employees?.name || 'Unknown Employee'}</h4>
-                      <p className="text-sm text-gray-600">{record.employees?.email}</p>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-lg font-bold capitalize">
-                        {record.status}
-                        {record.status === 'present' && ' ✅'}
-                        {record.status === 'absent' && ' ❌'}
-                        {record.status === 'late' && ' ⏰'}
-                        {record.status === 'sick' && ' 🤒'}
-                        {record.status === 'vacation' && ' 🏖️'}
-                        {record.status === 'remote' && ' 🏠'}
+                <div key={record.id} className="rounded-lg border p-4 transition-colors duration-150 hover:bg-muted/40">
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <InitialsAvatar name={record.employee?.name || 'Former employee'} />
+                      <div className="min-w-0">
+                        <h4 className="truncate font-semibold">{record.employee?.name || 'Former employee'}</h4>
+                        <p className="truncate text-sm text-muted-foreground">{record.employee?.email}</p>
                       </div>
-                      <p className="text-sm text-gray-500">
-                        {formatDate(record.date)}
-                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <AttendanceBadge status={record.status} label={attendanceLabel(record.status)} />
+                      <p className="text-xs text-muted-foreground">{formatDate(record.date)}</p>
                     </div>
                   </div>
-                  <p className="text-gray-700">
-                    Hours Worked: {record.hours_worked}
+                  <p className="text-sm tabular-nums text-muted-foreground">
+                    {record.check_in_time && (!record.check_out_time || record.check_out_time.slice(0, 5) === record.check_in_time.slice(0, 5)) && record.hours_worked === 0
+                      ? <span className="font-medium text-foreground">Shift in progress</span>
+                      : <>Hours worked: <span className="font-medium text-foreground">{record.hours_worked}</span></>}
+                    {record.check_in_time && <> · In {record.check_in_time.slice(0, 5)}</>}
+                    {record.check_out_time && <> · Out {record.check_out_time.slice(0, 5)}</>}
                   </p>
+                  {record.notes && <p className="text-sm text-muted-foreground mt-1">{record.notes}</p>}
                 </div>
               ))}
             </div>
@@ -358,72 +223,77 @@ export default function SimpleAttendanceContent() {
           <DialogHeader>
             <DialogTitle>Mark Employee Attendance</DialogTitle>
           </DialogHeader>
-          <form onSubmit={addAttendance} className="grid gap-4 py-4">
+          <form onSubmit={saveAttendance} className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label htmlFor="employee">Employee</Label>
-              <Select 
-                value={newRecord.employee_id} 
-                onValueChange={(value) => setNewRecord({...newRecord, employee_id: value})}
-                required
+              <Label>Employee</Label>
+              <Select
+                value={newRecord.employee_id}
+                onValueChange={(value) => setNewRecord({ ...newRecord, employee_id: value })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select employee" />
                 </SelectTrigger>
                 <SelectContent>
                   {employees.map(emp => (
-                    <SelectItem key={emp.id} value={emp.id}>
-                      {emp.name}
-                    </SelectItem>
+                    <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="date">Date</Label>
+              <Label htmlFor="att-date">Date</Label>
               <Input
-                id="date"
+                id="att-date"
                 type="date"
                 value={newRecord.date}
-                onChange={(e) => setNewRecord({...newRecord, date: e.target.value})}
+                onChange={(e) => setNewRecord({ ...newRecord, date: e.target.value })}
                 required
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="status">Status</Label>
-              <Select 
-                value={newRecord.status} 
-                onValueChange={(value) => setNewRecord({...newRecord, status: value})}
-                required
+              <Label>Status</Label>
+              <Select
+                value={newRecord.status}
+                onValueChange={(value) => setNewRecord({ ...newRecord, status: value as AttendanceStatus })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Present">Present</SelectItem>
-                  <SelectItem value="Absent">Absent</SelectItem>
-                  <SelectItem value="Late">Late</SelectItem>
-                  <SelectItem value="Half Day">Half Day</SelectItem>
+                  {ATTENDANCE_STATUSES.map(s => (
+                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="notes">Notes (Optional)</Label>
+              <Label htmlFor="att-hours">Hours worked (optional)</Label>
               <Input
-                id="notes"
+                id="att-hours"
+                type="number"
+                min={0}
+                max={24}
+                step={0.25}
+                value={newRecord.hours_worked}
+                onChange={(e) => setNewRecord({ ...newRecord, hours_worked: e.target.value })}
+                placeholder={`Default: ${ATTENDANCE_STATUSES.find(s => s.value === newRecord.status)?.defaultHours ?? '—'}`}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="att-notes">Notes (optional)</Label>
+              <Input
+                id="att-notes"
                 value={newRecord.notes}
-                onChange={(e) => setNewRecord({...newRecord, notes: e.target.value})}
+                onChange={(e) => setNewRecord({ ...newRecord, notes: e.target.value })}
                 placeholder="Additional notes..."
               />
             </div>
-            <div className="flex justify-end space-x-2 pt-4">
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={() => setIsDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit">Mark Attendance</Button>
+            <p className="text-xs text-muted-foreground">
+              If a record already exists for this employee and date, it will be updated.
+            </p>
+            <div className="flex justify-end space-x-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={submitting}>{submitting ? 'Saving...' : 'Save'}</Button>
             </div>
           </form>
         </DialogContent>

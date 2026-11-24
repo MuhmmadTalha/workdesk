@@ -1,326 +1,186 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { UserPlus, CheckCircle, XCircle, Clock, Mail, Calendar, Building, Pencil, Trash2, Download } from "lucide-react"
+import { UserPlus, CheckCircle, Ban, Mail, Calendar, Building, Pencil, Trash2, Download, KeyRound, RefreshCw, Search, Users } from "lucide-react"
+import { EmptyState, SectionSkeleton } from "@/components/feedback-states"
+import { InitialsAvatar } from "@/components/initials-avatar"
 import { supabase, type Employee } from "@/lib/supabase"
+import { useLiveRefresh } from "@/lib/use-live-refresh"
 import { useToast } from "@/hooks/use-toast"
-import { emailService } from "@/lib/email-service"
+import { splitForHighlight } from "@/lib/utils"
 
-export function EmployeeManagement() {
+type Role = "admin" | "employee"
+
+/** Calls the server-side admin API (service role key never reaches the browser). */
+async function adminApi(method: "POST" | "PATCH" | "DELETE", body?: unknown, query = "") {
+  const res = await fetch(`/api/admin/employees${query}`, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`)
+  return json
+}
+
+/** Random, readable temporary password (no ambiguous characters). */
+function generatePassword(length = 12) {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+  const values = new Uint32Array(length)
+  crypto.getRandomValues(values)
+  return Array.from(values, v => chars[v % chars.length]).join("")
+}
+
+function csvCell(value: string) {
+  return `"${value.replace(/"/g, '""')}"`
+}
+
+export function EmployeeManagement({ currentUserId }: { currentUserId: string }) {
   const [employees, setEmployees] = useState<Employee[]>([])
-  const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [isLoading, setIsLoading] = useState(true)
-  const [isAddingEmployee, setIsAddingEmployee] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const [isAddOpen, setIsAddOpen] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(null)
+  const [employeeToReset, setEmployeeToReset] = useState<Employee | null>(null)
   const { toast } = useToast()
 
   useEffect(() => {
     loadEmployees()
   }, [])
 
-  useEffect(() => {
-    // Filter employees by name only
-    let filtered = employees.filter(employee => 
-      employee.name.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+  useLiveRefresh(["employees"], () => loadEmployees(true))
 
-    // Sort: Admins first, then by name
-    filtered.sort((a, b) => {
-      if (a.role === 'admin' && b.role !== 'admin') return -1
-      if (a.role !== 'admin' && b.role === 'admin') return 1
-      return a.name.localeCompare(b.name)
-    })
-
-    setFilteredEmployees(filtered)
+  const filteredEmployees = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase()
+    return employees
+      .filter(e => !q || e.name.toLowerCase().includes(q) || e.email.toLowerCase().includes(q))
+      .sort((a, b) => {
+        if (a.role !== b.role) return a.role === "admin" ? -1 : 1
+        return a.name.localeCompare(b.name)
+      })
   }, [employees, searchTerm])
 
-  // Highlight helper for name only
-  function highlightText(text: string) {
-    if (!searchTerm) return text
-    const regex = new RegExp(`(${searchTerm})`, 'gi')
-    return text.split(regex).map((part, i) =>
-      regex.test(part)
-        ? <span key={i} style={{ background: '#fde68a', color: '#b45309', borderRadius: '2px', padding: '0 2px' }}>{part}</span>
-        : part
+  const highlight = (text: string) =>
+    splitForHighlight(text, searchTerm).map((part, i) =>
+      part.match
+        ? <mark key={i} className="bg-warning-soft text-warning-soft-foreground rounded px-0.5">{part.text}</mark>
+        : <span key={i}>{part.text}</span>
     )
+
+  const loadEmployees = async (silent = false) => {
+    if (!silent) setIsLoading(true)
+    const { data, error } = await supabase
+      .from("employees")
+      .select("*")
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      toast({ title: "Error", description: "Failed to load employees", variant: "destructive" })
+    } else {
+      setEmployees(data || [])
+    }
+    setIsLoading(false)
   }
 
-  const loadEmployees = async () => {
+  const run = async (action: () => Promise<unknown>, success: string) => {
+    setBusy(true)
     try {
-      setIsLoading(true)
-      
-      const { data: employees, error } = await supabase
-        .from('employees')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        throw error
-      }
-
-      console.log('✅ Loaded employees:', employees?.length || 0)
-      setEmployees(employees || [])
+      await action()
+      toast({ title: "Done", description: success })
+      await loadEmployees()
+      return true
     } catch (error) {
-      console.error('Error loading employees:', error)
       toast({
         title: "Error",
-        description: "Failed to load employees",
-        variant: "destructive"
+        description: error instanceof Error ? error.message : "Something went wrong",
+        variant: "destructive",
       })
+      return false
     } finally {
-      setIsLoading(false)
+      setBusy(false)
     }
   }
 
-  const handleVerifyEmployee = async (employeeId: string) => {
-    try {
-      // Get employee details first
-      const { data: employee, error: fetchError } = await supabase
-        .from('employees')
-        .select('*')
-        .eq('id', employeeId)
-        .single()
-
-      if (fetchError || !employee) {
-        throw new Error('Employee not found')
-      }
-
-      // Update employee verification status
-      const { error } = await supabase
-        .from('employees')
-        .update({ is_verified: true })
-        .eq('id', employeeId)
-
-      if (error) {
-        throw error
-      }
-
-      // Send verification email with login credentials
-      try {
-        await emailService.sendEmployeeVerificationEmail({
-          name: employee.name,
-          email: employee.email,
-          companyName: 'Gen-T',
-          adminName: 'Muhammad Talha Butt',
-          dashboardUrl: `${window.location.origin}/login`
-        })
-        
-        console.log('✅ Verification email sent to:', employee.email)
-      } catch (emailError) {
-        console.error('⚠️ Failed to send verification email:', emailError)
-        // Don't fail the verification if email fails
-      }
-
-      // Reload employees to get updated data
-      await loadEmployees()
-      
-      toast({
-        title: "Employee Verified",
-        description: `${employee.name} has been verified and notified via email with login credentials.`,
-      })
-    } catch (error) {
-      console.error('Error verifying employee:', error)
-      toast({
-        title: "Error",
-        description: "Failed to verify employee",
-        variant: "destructive"
-      })
-    }
-  }
-
-  const handleRejectEmployee = async (employeeId: string) => {
-    try {
-      const { error } = await supabase
-        .from('employees')
-        .delete()
-        .eq('id', employeeId)
-
-      if (error) {
-        throw error
-      }
-
-      // Reload employees to get updated data
-      await loadEmployees()
-      
-      toast({
-        title: "Employee Rejected",
-        description: "Employee has been removed from the system",
-      })
-    } catch (error) {
-      console.error('Error rejecting employee:', error)
-      toast({
-        title: "Error", 
-        description: "Failed to reject employee",
-        variant: "destructive"
-      })
-    }
-  }
-
-  const handleEditEmployee = (employee: Employee) => {
-    setEditingEmployee(employee)
-    setIsEditDialogOpen(true)
-  }
-
-  const handleDeleteEmployee = (employee: Employee) => {
-    setEmployeeToDelete(employee)
-    setIsDeleteDialogOpen(true)
-  }
-
-  const confirmDeleteEmployee = async () => {
-    if (!employeeToDelete) return
-
-    try {
-      const { error } = await supabase
-        .from('employees')
-        .delete()
-        .eq('id', employeeToDelete.id)
-
-      if (error) {
-        throw error
-      }
-
-      await loadEmployees()
-      setIsDeleteDialogOpen(false)
-      setEmployeeToDelete(null)
-      
-      toast({
-        title: "Employee Deleted",
-        description: `${employeeToDelete.name} has been permanently removed from the system.`,
-      })
-    } catch (error) {
-      console.error('Error deleting employee:', error)
-      toast({
-        title: "Error",
-        description: "Failed to delete employee",
-        variant: "destructive"
-      })
-    }
-  }
+  const toggleActive = (employee: Employee) =>
+    run(
+      () => adminApi("PATCH", { id: employee.id, active: !employee.is_verified }),
+      employee.is_verified ? `${employee.name} has been deactivated.` : `${employee.name} has been reactivated.`
+    )
 
   const handleExportCSV = () => {
-    try {
-      // Define CSV headers
-      const headers = [
-        'Name',
-        'Email', 
-        'Role',
-        'Department',
-        'Position',
-        'Status',
-        'Hire Date',
-        'Verified'
-      ]
-
-      // Convert employee data to CSV format
-      const csvData = filteredEmployees.map(employee => [
-        employee.name || '',
-        employee.email || '',
-        employee.role.charAt(0).toUpperCase() + employee.role.slice(1),
-        employee.department || 'N/A',
-        employee.position || 'N/A',
-        employee.is_verified ? 'Active' : 'Pending',
-        employee.hire_date ? new Date(employee.hire_date).toLocaleDateString() : 'N/A',
-        employee.is_verified ? 'Yes' : 'No'
-      ])
-
-      // Combine headers and data
-      const csvContent = [headers, ...csvData]
-        .map(row => row.map(field => `"${field}"`).join(','))
-        .join('\n')
-
-      // Create and download the file
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-      const link = document.createElement('a')
-      
-      if (link.download !== undefined) {
-        const url = URL.createObjectURL(blob)
-        link.setAttribute('href', url)
-        link.setAttribute('download', `employees_${new Date().toISOString().split('T')[0]}.csv`)
-        link.style.visibility = 'hidden'
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-      }
-
-      toast({
-        title: "Export Successful",
-        description: `Exported ${filteredEmployees.length} employees to CSV file.`,
-      })
-    } catch (error) {
-      console.error('Error exporting CSV:', error)
-      toast({
-        title: "Export Failed",
-        description: "Failed to export employee data",
-        variant: "destructive"
-      })
-    }
+    const headers = ["Name", "Email", "Role", "Department", "Position", "Status", "Hire Date"]
+    const rows = filteredEmployees.map(e => [
+      e.name,
+      e.email,
+      e.role,
+      e.department || "",
+      e.position || "",
+      e.is_verified ? "Active" : "Deactivated",
+      e.hire_date || "",
+    ])
+    const csv = [headers, ...rows].map(row => row.map(csvCell).join(",")).join("\n")
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }))
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `employees_${new Date().toISOString().split("T")[0]}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
   }
 
-  const handleUpdateEmployee = async (updatedData: Partial<Employee>) => {
-    if (!editingEmployee) return
+  const statusBadge = (employee: Employee) =>
+    employee.is_verified ? (
+      <Badge className="border-success/30 bg-success-soft text-success-soft-foreground">
+        <CheckCircle aria-hidden="true" /> Active
+      </Badge>
+    ) : (
+      <Badge variant="secondary" className="text-muted-foreground">
+        <Ban aria-hidden="true" /> Deactivated
+      </Badge>
+    )
 
-    try {
-      const { error } = await supabase
-        .from('employees')
-        .update(updatedData)
-        .eq('id', editingEmployee.id)
-
-      if (error) {
-        throw error
-      }
-
-      await loadEmployees()
-      setIsEditDialogOpen(false)
-      setEditingEmployee(null)
-      
-      toast({
-        title: "Employee Updated",
-        description: "Employee details have been successfully updated.",
-      })
-    } catch (error) {
-      console.error('Error updating employee:', error)
-      toast({
-        title: "Error",
-        description: "Failed to update employee",
-        variant: "destructive"
-      })
-    }
-  }
-
-  const getStatusBadge = (isVerified: boolean) => {
-    if (isVerified) {
-      return (
-        <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
-          <CheckCircle className="w-3 h-3 mr-1" />
-          Verified
-        </Badge>
-      )
-    } else {
-      return (
-        <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100">
-          <Clock className="w-3 h-3 mr-1" />
-          Pending
-        </Badge>
-      )
-    }
-  }
+  const actions = (employee: Employee, isSelf: boolean) => (
+    <>
+      <Button size="icon" variant="ghost" title="Edit" aria-label={`Edit ${employee.name}`} disabled={busy}
+        onClick={() => setEditingEmployee(employee)}>
+        <Pencil className="w-4 h-4" aria-hidden="true" />
+      </Button>
+      <Button size="icon" variant="ghost" title="Reset password" aria-label={`Reset password for ${employee.name}`} disabled={busy}
+        onClick={() => setEmployeeToReset(employee)}>
+        <KeyRound className="w-4 h-4" aria-hidden="true" />
+      </Button>
+      {!isSelf && (
+        <>
+          <Button size="icon" variant="ghost" disabled={busy}
+            title={employee.is_verified ? "Deactivate" : "Reactivate"}
+            aria-label={`${employee.is_verified ? "Deactivate" : "Reactivate"} ${employee.name}`}
+            onClick={() => toggleActive(employee)}>
+            {employee.is_verified
+              ? <Ban className="w-4 h-4 text-warning-soft-foreground" aria-hidden="true" />
+              : <CheckCircle className="w-4 h-4 text-success" aria-hidden="true" />}
+          </Button>
+          <Button size="icon" variant="ghost" title="Delete" aria-label={`Delete ${employee.name}`} disabled={busy}
+            onClick={() => setEmployeeToDelete(employee)} className="hover:bg-danger-soft hover:text-destructive">
+            <Trash2 className="w-4 h-4" aria-hidden="true" />
+          </Button>
+        </>
+      )}
+    </>
+  )
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
+      <SectionSkeleton rows={6} label="Loading employees" />
     )
   }
 
@@ -328,279 +188,240 @@ export function EmployeeManagement() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Employee Management</h2>
-          <p className="text-muted-foreground">
-            Manage and verify employee accounts
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">Employees</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Create accounts, reset passwords and manage access</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="flex items-center gap-2 order-2 sm:order-1"
-            onClick={handleExportCSV}
-          >
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">Export CSV</span>
-            <span className="sm:hidden">Export</span>
+          <Button variant="outline" size="sm" className="flex items-center gap-2 order-2 sm:order-1" onClick={handleExportCSV}>
+            <Download className="w-4 h-4" aria-hidden="true" />
+            Export CSV
           </Button>
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button className="order-1 sm:order-2">
-                <UserPlus className="w-4 h-4 mr-2" />
-                <span className="hidden sm:inline">Add Employee</span>
-                <span className="sm:hidden">Add</span>
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
-              <DialogHeader>
-                <DialogTitle>Add New Employee</DialogTitle>
-                <DialogDescription>
-                  Add a new employee to the system.
-                </DialogDescription>
-              </DialogHeader>
-              <AddEmployeeForm onSubmit={async (data) => {
-                try {
-                  // Add employee to database
-                  const { error } = await supabase
-                    .from('employees')
-                    .insert([{
-                      email: data.email,
-                      name: data.name,
-                      department: data.department,
-                      position: data.position,
-                      role: 'employee',
-                      is_verified: false,
-                      hire_date: new Date().toISOString().split('T')[0]
-                    }])
-
-                  if (error) {
-                    throw error
-                  }
-
-                  // Send welcome email to new employee
-                  try {
-                    await emailService.sendEmployeeWelcomeEmail({
-                      name: data.name,
-                      email: data.email,
-                      companyName: 'Gen-T',
-                      adminName: 'Muhammad Talha Butt',
-                      setupUrl: `${window.location.origin}/login`
-                    })
-                    
-                    console.log('✅ Welcome email sent to:', data.email)
-                  } catch (emailError) {
-                    console.error('⚠️ Failed to send welcome email:', emailError)
-                    // Don't fail the employee creation if email fails
-                  }
-
-                  // Reload employees to show the new employee
-                  await loadEmployees()
-
-                  toast({
-                    title: "Employee Added Successfully",
-                    description: `${data.name} has been added to the system and notified via email. They are pending verification.`,
-                  })
-                } catch (error) {
-                  console.error('Error adding employee:', error)
-                  // Safely log error details
-                  if (error instanceof Error) {
-                    console.error('Error message:', error.message)
-                    console.error('Error stack:', error.stack)
-                  } else {
-                    console.error('Error type:', typeof error)
-                    console.error('Error value:', error)
-                  }
-                  
-                  const errorMsg = error instanceof Error ? error.message : 'Unknown error occurred'
-                  toast({
-                    title: "Error",
-                    description: `Failed to add employee: ${errorMsg}`,
-                    variant: "destructive"
-                  })
-                }
-              }} />
-            </DialogContent>
-          </Dialog>
+          <Button className="order-1 sm:order-2" onClick={() => setIsAddOpen(true)}>
+            <UserPlus className="w-4 h-4" aria-hidden="true" />
+            Add Employee
+          </Button>
         </div>
       </div>
 
-      <div className="grid gap-4">
-        <Card>
-          <CardHeader>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <CardTitle>All Employees</CardTitle>
-                <CardDescription>
-                  View and manage employee verification status
-                </CardDescription>
-              </div>
-              <div className="w-full max-w-xs sm:w-72">
-                <Input
-                  placeholder="Search employees..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="h-9 w-full"
-                />
-              </div>
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <CardTitle>All Employees ({employees.length})</CardTitle>
+              <CardDescription>Deactivated accounts cannot sign in</CardDescription>
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="w-full max-w-full overflow-x-auto" style={{ maxWidth: '100vw' }}>
-              <Table className="w-full" style={{ minWidth: '600px' }}>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Employee</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead className="hidden sm:table-cell">Department</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="hidden sm:table-cell">Hire Date</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredEmployees.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8">
-                        <div className="text-muted-foreground">
-                          {searchTerm ? `No employees found matching "${searchTerm}"` : 'No employees found'}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredEmployees.map((employee) => (
-                    <TableRow key={employee.id} className="group hover:bg-muted/50">
-                      <TableCell>
-                        <div className="flex justify-between items-start">
-                          <div className="flex flex-col">
-                            <div className="font-medium">{highlightText(employee.name)}</div>
-                            <div className="text-sm text-muted-foreground flex items-center">
-                              <Mail className="w-3 h-3 mr-1" />
-                              {employee.email}
+            <div className="relative w-full sm:w-72">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+              <Input
+                aria-label="Search employees"
+                placeholder="Search by name or email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="h-9 w-full pl-9"
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {filteredEmployees.length === 0 ? (
+            searchTerm
+              ? <EmptyState icon={Search} title="No matching employees" description={`Nothing matches "${searchTerm}".`} />
+              : <EmptyState icon={Users} title="No employees yet" description="Add your first team member to get started."
+                  action={<Button size="sm" onClick={() => setIsAddOpen(true)}><UserPlus aria-hidden="true" />Add employee</Button>} />
+          ) : (
+          <>
+          {/* Mobile: stacked cards */}
+          <ul className="divide-y rounded-lg border md:hidden">
+            {filteredEmployees.map((employee) => {
+              const isSelf = employee.id === currentUserId
+              return (
+                <li key={employee.id} className="p-3">
+                  <div className="flex items-start gap-3">
+                    <InitialsAvatar name={employee.name} />
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">
+                        {highlight(employee.name)}
+                        {isSelf && <span className="ml-2 text-xs text-muted-foreground">(you)</span>}
+                      </div>
+                      <div className="truncate text-sm text-muted-foreground">{highlight(employee.email)}</div>
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <Badge variant={employee.role === "admin" ? "default" : "secondary"} className="capitalize">{employee.role}</Badge>
+                        {statusBadge(employee)}
+                        {employee.department && <span className="text-xs text-muted-foreground">{employee.department}</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex justify-end gap-1 border-t pt-2">{actions(employee, isSelf)}</div>
+                </li>
+              )
+            })}
+          </ul>
+          <div className="hidden w-full overflow-x-auto md:block">
+            <Table className="w-full">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Employee</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Department</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="hidden lg:table-cell">Hire Date</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredEmployees.map((employee) => {
+                    const isSelf = employee.id === currentUserId
+                    return (
+                      <TableRow key={employee.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <InitialsAvatar name={employee.name} />
+                            <div className="min-w-0">
+                              <div className="font-medium">
+                                {highlight(employee.name)}
+                                {isSelf && <span className="ml-2 text-xs text-muted-foreground">(you)</span>}
+                              </div>
+                              <div className="text-sm text-muted-foreground flex items-center">
+                                <Mail className="w-3 h-3 mr-1" aria-hidden="true" />
+                                {highlight(employee.email)}
+                              </div>
                             </div>
                           </div>
-                          {employee.role !== 'admin' && (
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 ml-2">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleEditEmployee(employee)}
-                                className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleDeleteEmployee(employee)}
-                                className="h-8 w-8 p-0 text-muted-foreground hover:text-red-600"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={employee.role === 'admin' ? 'default' : 'secondary'}>
-                          {employee.role.charAt(0).toUpperCase() + employee.role.slice(1)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell">
-                        <div className="flex flex-col">
-                          <div className="flex items-center text-xs">
-                            <Building className="w-3 h-3 mr-1" />
-                            {employee.department || 'N/A'}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {employee.position || 'N/A'}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {getStatusBadge(employee.is_verified)}
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell">
-                        <div className="flex items-center text-xs">
-                          <Calendar className="w-3 h-3 mr-1" />
-                          {employee.hire_date ? new Date(employee.hire_date).toLocaleDateString() : 'N/A'}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {!employee.is_verified && employee.role !== 'admin' && (
-                          <div className="flex gap-2 justify-end">
-                            <Button
-                              size="sm"
-                              onClick={() => handleVerifyEmployee(employee.id)}
-                              className="bg-green-600 hover:bg-green-700"
-                            >
-                              <CheckCircle className="w-3 h-3 mr-1" />
-                              Verify
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => handleRejectEmployee(employee.id)}
-                            >
-                              <XCircle className="w-3 h-3 mr-1" />
-                              Reject
-                            </Button>
-                          </div>
-                        )}
-                        {employee.is_verified && (
-                          <Badge variant="outline" className="text-green-600">
-                            Active
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={employee.role === "admin" ? "default" : "secondary"} className="capitalize">
+                            {employee.role}
                           </Badge>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center text-xs">
+                            <Building className="w-3 h-3 mr-1" aria-hidden="true" />
+                            {employee.department || "N/A"}
+                          </div>
+                          <div className="text-xs text-muted-foreground">{employee.position || "N/A"}</div>
+                        </TableCell>
+                        <TableCell>
+                          {statusBadge(employee)}
+                        </TableCell>
+                        <TableCell className="hidden lg:table-cell">
+                          <div className="flex items-center text-xs">
+                            <Calendar className="w-3 h-3 mr-1" aria-hidden="true" />
+                            {employee.hire_date || "N/A"}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex gap-1 justify-end">{actions(employee, isSelf)}</div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+              </TableBody>
+            </Table>
+          </div>
+          </>
+          )}
+        </CardContent>
+      </Card>
 
-      {/* Edit Employee Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent>
+      {/* Add */}
+      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>Edit Employee</DialogTitle>
+            <DialogTitle>Add New Employee</DialogTitle>
             <DialogDescription>
-              Update employee information
+              The account works immediately. Give the employee their email and temporary password;
+              they can change it after signing in.
             </DialogDescription>
           </DialogHeader>
+          <EmployeeForm
+            mode="create"
+            busy={busy}
+            onCancel={() => setIsAddOpen(false)}
+            onSubmit={async (data) => {
+              const ok = await run(() => adminApi("POST", data), `${data.name} can now sign in with the temporary password.`)
+              if (ok) setIsAddOpen(false)
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit */}
+      <Dialog open={!!editingEmployee} onOpenChange={(open) => !open && setEditingEmployee(null)}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Edit Employee</DialogTitle>
+            <DialogDescription>Update details, email or role</DialogDescription>
+          </DialogHeader>
           {editingEmployee && (
-            <EditEmployeeForm 
-              employee={editingEmployee} 
-              onSubmit={handleUpdateEmployee}
-              onCancel={() => setIsEditDialogOpen(false)}
+            <EmployeeForm
+              mode="edit"
+              employee={editingEmployee}
+              canChangeRole={editingEmployee.id !== currentUserId}
+              busy={busy}
+              onCancel={() => setEditingEmployee(null)}
+              onSubmit={async (data) => {
+                const changes: Record<string, unknown> = { id: editingEmployee.id }
+                if (data.name !== editingEmployee.name) changes.name = data.name
+                if (data.email !== editingEmployee.email) changes.email = data.email
+                if (data.role !== editingEmployee.role) changes.role = data.role
+                if (data.department !== (editingEmployee.department || "")) changes.department = data.department || null
+                if (data.position !== (editingEmployee.position || "")) changes.position = data.position || null
+                const ok = await run(() => adminApi("PATCH", changes), "Employee details updated.")
+                if (ok) setEditingEmployee(null)
+              }}
             />
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Delete Employee Dialog */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+      {/* Reset password */}
+      <Dialog open={!!employeeToReset} onOpenChange={(open) => !open && setEmployeeToReset(null)}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Reset Password</DialogTitle>
+            <DialogDescription>
+              Set a new temporary password for {employeeToReset?.name}. Share it with them privately.
+            </DialogDescription>
+          </DialogHeader>
+          {employeeToReset && (
+            <ResetPasswordForm
+              busy={busy}
+              onCancel={() => setEmployeeToReset(null)}
+              onSubmit={async (password) => {
+                const ok = await run(
+                  () => adminApi("PATCH", { id: employeeToReset.id, password }),
+                  `Password reset for ${employeeToReset.name}.`
+                )
+                if (ok) setEmployeeToReset(null)
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete */}
+      <Dialog open={!!employeeToDelete} onOpenChange={(open) => !open && setEmployeeToDelete(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Employee</DialogTitle>
             <DialogDescription>
-              Are you sure you want to permanently delete {employeeToDelete?.name}? This action cannot be undone.
+              Permanently delete {employeeToDelete?.name}? Their login, notes, attendance, task assignments
+              and ratings are removed too. To keep history, deactivate the account instead.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setIsDeleteDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button 
-              variant="destructive" 
-              onClick={confirmDeleteEmployee}
+            <Button variant="outline" onClick={() => setEmployeeToDelete(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={busy}
+              onClick={async () => {
+                if (!employeeToDelete) return
+                const ok = await run(
+                  () => adminApi("DELETE", undefined, `?id=${encodeURIComponent(employeeToDelete.id)}`),
+                  `${employeeToDelete.name} has been deleted.`
+                )
+                if (ok) setEmployeeToDelete(null)
+              }}
             >
               Delete Permanently
             </Button>
@@ -611,156 +432,123 @@ export function EmployeeManagement() {
   )
 }
 
-function AddEmployeeForm({ onSubmit }: { onSubmit: (data: any) => void }) {
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    department: "",
-    position: "",
-    role: "employee"
-  })
+interface EmployeeFormData {
+  name: string
+  email: string
+  role: Role
+  department: string
+  position: string
+  password: string
+}
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    // Validate required fields
-    if (!formData.name.trim()) {
-      alert('Name is required')
-      return
-    }
-    
-    if (!formData.email.trim()) {
-      alert('Email is required')
-      return
-    }
-    
-    onSubmit(formData)
-  }
+function EmployeeForm({
+  mode,
+  employee,
+  canChangeRole = true,
+  busy,
+  onSubmit,
+  onCancel,
+}: {
+  mode: "create" | "edit"
+  employee?: Employee
+  canChangeRole?: boolean
+  busy: boolean
+  onSubmit: (data: EmployeeFormData) => void
+  onCancel: () => void
+}) {
+  const [formData, setFormData] = useState<EmployeeFormData>({
+    name: employee?.name || "",
+    email: employee?.email || "",
+    role: employee?.role || "employee",
+    department: employee?.department || "",
+    position: employee?.position || "",
+    password: mode === "create" ? generatePassword() : "",
+  })
+  const set = (patch: Partial<EmployeeFormData>) => setFormData(prev => ({ ...prev, ...patch }))
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        onSubmit({
+          ...formData,
+          name: formData.name.trim(),
+          email: formData.email.trim().toLowerCase(),
+          department: formData.department.trim(),
+          position: formData.position.trim(),
+        })
+      }}
+      className="space-y-4"
+    >
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="name">Full Name <span className="text-red-500">*</span></Label>
-          <Input
-            id="name"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            required
-            placeholder="Enter full name"
-          />
+          <Label htmlFor="emp-name">Full Name *</Label>
+          <Input id="emp-name" value={formData.name} onChange={(e) => set({ name: e.target.value })} required maxLength={255} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="email">Email <span className="text-red-500">*</span></Label>
-          <Input
-            id="email"
-            type="email"
-            value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            required
-            placeholder="Enter email address"
-          />
+          <Label htmlFor="emp-email">Email *</Label>
+          <Input id="emp-email" type="email" value={formData.email} onChange={(e) => set({ email: e.target.value })} required />
         </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="department">Department</Label>
-          <Input
-            id="department"
-            value={formData.department}
-            onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-            placeholder="Enter department"
-          />
+          <Label htmlFor="emp-dept">Department</Label>
+          <Input id="emp-dept" value={formData.department} onChange={(e) => set({ department: e.target.value })} maxLength={100} />
         </div>
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="position">Position</Label>
-        <Input
-          id="position"
-          value={formData.position}
-          onChange={(e) => setFormData({ ...formData, position: e.target.value })}
-          placeholder="Enter position/job title"
-        />
-      </div>
-      <div className="text-sm text-gray-500 mt-2">
-        <span className="text-red-500">*</span> Required fields
+        <div className="space-y-2">
+          <Label htmlFor="emp-pos">Position</Label>
+          <Input id="emp-pos" value={formData.position} onChange={(e) => set({ position: e.target.value })} maxLength={100} />
+        </div>
+        <div className="space-y-2">
+          <Label>Role</Label>
+          <Select value={formData.role} onValueChange={(v) => set({ role: v as Role })} disabled={!canChangeRole}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="employee">Employee</SelectItem>
+              <SelectItem value="admin">Admin</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {mode === "create" && (
+          <div className="space-y-2">
+            <Label htmlFor="emp-pass">Temporary Password *</Label>
+            <div className="flex gap-1">
+              <Input id="emp-pass" value={formData.password} onChange={(e) => set({ password: e.target.value })}
+                required minLength={8} maxLength={72} className="font-mono" />
+              <Button type="button" variant="outline" size="icon" title="Generate" aria-label="Generate new password" onClick={() => set({ password: generatePassword() })}>
+                <RefreshCw className="w-4 h-4" aria-hidden="true" />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
       <DialogFooter>
-        <Button type="submit">Add Employee</Button>
+        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button type="submit" disabled={busy}>{mode === "create" ? "Create Account" : "Save Changes"}</Button>
       </DialogFooter>
     </form>
   )
 }
 
-function EditEmployeeForm({ 
-  employee, 
-  onSubmit, 
-  onCancel 
-}: { 
-  employee: Employee
-  onSubmit: (data: Partial<Employee>) => void
-  onCancel: () => void 
+function ResetPasswordForm({ busy, onSubmit, onCancel }: {
+  busy: boolean
+  onSubmit: (password: string) => void
+  onCancel: () => void
 }) {
-  const [formData, setFormData] = useState({
-    name: employee.name || "",
-    email: employee.email || "",
-    department: employee.department || "",
-    position: employee.position || "",
-  })
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    onSubmit(formData)
-  }
-
+  const [password, setPassword] = useState(generatePassword())
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="edit-name">Name *</Label>
-          <Input
-            id="edit-name"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="edit-email">Email *</Label>
-          <Input
-            id="edit-email"
-            type="email"
-            value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            required
-          />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="edit-department">Department</Label>
-          <Input
-            id="edit-department"
-            value={formData.department}
-            onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-          />
-        </div>
-      </div>
+    <form onSubmit={(e) => { e.preventDefault(); onSubmit(password) }} className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="edit-position">Position</Label>
-        <Input
-          id="edit-position"
-          value={formData.position}
-          onChange={(e) => setFormData({ ...formData, position: e.target.value })}
-        />
+        <Label htmlFor="reset-pass">New temporary password</Label>
+        <div className="flex gap-1">
+          <Input id="reset-pass" value={password} onChange={(e) => setPassword(e.target.value)}
+            required minLength={8} maxLength={72} className="font-mono" />
+          <Button type="button" variant="outline" size="icon" title="Generate" aria-label="Generate new password" onClick={() => setPassword(generatePassword())}>
+            <RefreshCw className="w-4 h-4" aria-hidden="true" />
+          </Button>
+        </div>
       </div>
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button type="submit">
-          Update Employee
-        </Button>
+        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button type="submit" disabled={busy}>Reset Password</Button>
       </DialogFooter>
     </form>
   )

@@ -9,9 +9,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { supabase } from '@/lib/supabase'
+import { useLiveRefresh } from "@/lib/use-live-refresh"
 import { formatDate } from '@/lib/date-utils'
 import { useToast } from "@/hooks/use-toast"
-import { Plus, Edit, Trash2 } from 'lucide-react'
+import { Plus, Edit, Trash2, Users, MessageSquareText, Star } from 'lucide-react'
+import { StatCard } from '@/components/stat-card'
+import { InitialsAvatar } from '@/components/initials-avatar'
+import { EmptyState, ErrorState, RatingStars, SectionSkeleton } from '@/components/feedback-states'
 
 interface Employee {
   id: string
@@ -40,7 +44,7 @@ export default function SimplePerformanceContent() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingRating, setEditingRating] = useState<PerformanceRating | null>(null)
   const { toast } = useToast()
-  
+
   // Form state
   const [selectedEmployee, setSelectedEmployee] = useState<string>('')
   const [rating, setRating] = useState<string>('')
@@ -50,8 +54,7 @@ export default function SimplePerformanceContent() {
   const loadData = async () => {
 
     try {
-      console.log('Loading employees and performance ratings...')
-      
+
       // Load employees (exclude admin from rating)
       const { data: employeesData, error: employeesError } = await supabase
         .from('employees')
@@ -60,12 +63,9 @@ export default function SimplePerformanceContent() {
         .order('name')
 
       if (employeesError) {
-        console.error('Error loading employees:', employeesError)
         setError(`Error loading employees: ${employeesError.message}`)
         return
       }
-
-      console.log('Employees loaded:', employeesData)
       setEmployees(employeesData || [])
 
       // Load performance ratings - simple query first
@@ -75,30 +75,26 @@ export default function SimplePerformanceContent() {
         .order('created_at', { ascending: false })
 
       if (ratingsError) {
-        console.error('Error loading performance ratings:', ratingsError)
         setError(`Error loading performance ratings: ${ratingsError.message}`)
         return
       }
 
-      console.log('Performance ratings loaded:', ratingsData)
-      
       // Create employee map for names
       const employeeMap = new Map()
       employeesData?.forEach(emp => {
         employeeMap.set(emp.id, { name: emp.name, email: emp.email })
       })
-      
+
       // Combine ratings data with employee names
       const ratingsWithEmployees = (ratingsData || []).map(rating => ({
         ...rating,
         employees: employeeMap.get(rating.employee_id) || { name: 'Unknown', email: '' }
       }))
-      
+
       setRatings(ratingsWithEmployees)
       setError(null)
 
     } catch (err) {
-      console.error('Unexpected error:', err)
       setError(`Unexpected error: ${err}`)
     } finally {
       setLoading(false)
@@ -121,7 +117,7 @@ export default function SimplePerformanceContent() {
       })
       return
     }
-    
+
     setEditingRating(rating)
     setSelectedEmployee(rating.employee_id)
     setRating(rating.rating.toString())
@@ -151,10 +147,9 @@ export default function SimplePerformanceContent() {
         title: "Success",
         description: "Performance rating deleted successfully",
       })
-      
+
       await loadData()
     } catch (error) {
-      console.error('Error deleting rating:', error)
       toast({
         title: "Error",
         description: "Failed to delete rating",
@@ -204,7 +199,6 @@ export default function SimplePerformanceContent() {
           .eq('id', editingRating.id)
 
         if (error) {
-          console.error('Error updating performance rating:', error)
           setError(`Error updating performance rating: ${error.message}`)
           return
         }
@@ -221,14 +215,12 @@ export default function SimplePerformanceContent() {
             {
               employee_id: selectedEmployee,
               rating: ratingNum,
-              feedback,
-              rated_by: '11111111-1111-1111-1111-111111111111'
+              feedback
             }
           ])
           .select()
 
         if (error) {
-          console.error('Error creating performance rating:', error)
           setError(`Error creating performance rating: ${error.message}`)
           return
         }
@@ -238,13 +230,12 @@ export default function SimplePerformanceContent() {
           description: "Performance rating added successfully",
         })
       }
-      
+
       // Reset form and reload data
       resetForm()
       await loadData()
 
     } catch (err) {
-      console.error('Unexpected error:', err)
       setError(`Unexpected error: ${err}`)
     } finally {
       setSubmitting(false)
@@ -255,12 +246,11 @@ export default function SimplePerformanceContent() {
     loadData()
   }, [])
 
+  useLiveRefresh(["performance_ratings", "employees"], () => loadData())
+
   if (loading) {
     return (
-      <div className="space-y-6">
-        <h2 className="text-2xl font-bold">Performance Management</h2>
-        <p>Loading performance data...</p>
-      </div>
+      <SectionSkeleton stats={3} rows={4} label="Loading performance" />
     )
   }
 
@@ -268,52 +258,37 @@ export default function SimplePerformanceContent() {
     <div className="space-y-6">
       <div className="flex flex-col space-y-4 md:flex-row md:justify-between md:items-center md:space-y-0">
         <div>
-          <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Performance Management</h2>
-          <p className="text-muted-foreground text-sm md:text-base">
+          <h1 className="text-2xl font-semibold tracking-tight">Performance</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Rate and track employee performance
           </p>
         </div>
         <Button onClick={() => setIsDialogOpen(true)} className="w-full md:w-auto">
-          <Plus className="mr-2 h-4 w-4" />
+          <Plus className="h-4 w-4" aria-hidden="true" />
           Rate Employee
         </Button>
       </div>
-      
+
       {error && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="p-4">
-            <p className="text-red-800">{error}</p>
-          </CardContent>
+        <Card className="py-0">
+          <ErrorState title="Couldn't load performance data" message={error} onRetry={() => { setLoading(true); loadData() }} />
         </Card>
       )}
 
-      {/* Statistics - Moved to Top */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg md:text-xl">Statistics</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="text-center p-3 md:p-4">
-              <div className="text-xl md:text-2xl font-bold">{employees.length}</div>
-              <p className="text-gray-600 text-sm md:text-base">Total Employees</p>
-            </div>
-            <div className="text-center p-3 md:p-4">
-              <div className="text-xl md:text-2xl font-bold">{ratings.length}</div>
-              <p className="text-gray-600 text-sm md:text-base">Total Ratings</p>
-            </div>
-            <div className="text-center p-3 md:p-4">
-              <div className="text-xl md:text-2xl font-bold text-yellow-600">
-                {ratings.length > 0 
-                  ? (ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length).toFixed(1)
-                  : '0'
-                }
-              </div>
-              <p className="text-gray-600 text-sm md:text-base">Average Rating</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        <StatCard label="Employees" value={employees.length} icon={Users} tone="brand" />
+        <StatCard label="Ratings given" value={ratings.length} icon={MessageSquareText} tone="info" />
+        <StatCard
+          label="Average rating"
+          icon={Star}
+          tone="warning"
+          empty={ratings.length === 0}
+          value={ratings.length > 0
+            ? (ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length).toFixed(1)
+            : '—'}
+          hint="out of 5"
+        />
+      </div>
 
       {/* Rate Employee Modal */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -371,8 +346,8 @@ export default function SimplePerformanceContent() {
             </div>
           </div>
           <DialogFooter>
-            <Button 
-              onClick={addPerformanceRating} 
+            <Button
+              onClick={addPerformanceRating}
               disabled={submitting}
               className="w-full"
             >
@@ -389,22 +364,31 @@ export default function SimplePerformanceContent() {
         </CardHeader>
         <CardContent>
           {ratings.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">No performance ratings found.</p>
+            <EmptyState
+              icon={Star}
+              title="No ratings yet"
+              description="Rate an employee to start tracking performance."
+              action={<Button size="sm" onClick={() => setIsDialogOpen(true)}><Plus aria-hidden="true" />Rate employee</Button>}
+            />
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {ratings.map((rating) => (
-                <div key={rating.id} className="border rounded-lg p-4">
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex-1">
-                      <h4 className="font-semibold">{rating.employees?.name || 'Unknown Employee'}</h4>
-                      <p className="text-sm text-gray-600">{rating.employees?.email}</p>
-                      <p className="text-gray-700 mt-2">{rating.feedback}</p>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <div className="text-lg font-bold mb-2">
-                        {rating.rating}/5 ⭐
+                <div key={rating.id} className="rounded-lg border p-4 transition-colors duration-150 hover:bg-muted/40">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex min-w-0 flex-1 gap-3">
+                      <InitialsAvatar name={rating.employees?.name || 'Unknown'} />
+                      <div className="min-w-0">
+                        <h4 className="font-semibold">{rating.employees?.name || 'Unknown Employee'}</h4>
+                        <p className="truncate text-sm text-muted-foreground">{rating.employees?.email}</p>
+                        {rating.feedback && <p className="mt-2 text-sm">{rating.feedback}</p>}
                       </div>
-                      <p className="text-sm text-gray-500 mb-2">
+                    </div>
+                    <div className="flex items-center justify-between gap-2 sm:flex-col sm:items-end">
+                      <div className="flex items-center gap-2">
+                        <RatingStars value={rating.rating} />
+                        <span className="text-sm font-semibold tabular-nums">{rating.rating}/5</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
                         {formatDate(rating.created_at)}
                       </p>
                       <div className="flex gap-1">
@@ -412,19 +396,22 @@ export default function SimplePerformanceContent() {
                           <>
                             <Button
                               variant="ghost"
-                              size="sm"
+                              size="icon"
                               onClick={() => editRating(rating)}
-                              title="Edit Rating"
+                              title="Edit rating"
+                              aria-label={`Edit rating for ${rating.employees?.name ?? 'employee'}`}
                             >
-                              <Edit className="h-4 w-4 text-blue-600" />
+                              <Edit className="h-4 w-4" aria-hidden="true" />
                             </Button>
                             <Button
                               variant="ghost"
-                              size="sm"
+                              size="icon"
                               onClick={() => deleteRating(rating.id, rating.created_at)}
-                              title="Delete Rating"
+                              title="Delete rating"
+                              aria-label={`Delete rating for ${rating.employees?.name ?? 'employee'}`}
+                              className="hover:bg-danger-soft hover:text-destructive"
                             >
-                              <Trash2 className="h-4 w-4 text-red-600" />
+                              <Trash2 className="h-4 w-4" aria-hidden="true" />
                             </Button>
                           </>
                         )}
