@@ -1,5 +1,5 @@
 -- =====================================================================
--- OFFICE MANAGEMENT SYSTEM — DATABASE SCHEMA (Supabase)
+-- WORKDESK — DATABASE SCHEMA (Supabase)
 -- =====================================================================
 -- Run this ONCE in a NEW Supabase project: Dashboard → SQL Editor → paste → Run.
 -- It is safe to re-run: nothing is dropped, existing data is kept.
